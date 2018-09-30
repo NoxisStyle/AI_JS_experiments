@@ -60,6 +60,22 @@ let g_settings =
         slotCount : 10
     },
 
+    reinforcement:{
+        environmentCollisionReward : -10,
+        endZoneCollisionReward : 100,
+        notMovingReward : -2,
+        goingDownReward : -1,
+        goingUpReward : 1,
+
+        maxSteps : 600,
+        miniBatchSize : 60,
+        episodeCount : 200,
+        layers : 5,
+        units : 10,
+        learningRate : 0.005,
+        gammaDiscountRate : 0.95
+    },
+
     versus:{
         // -1 = user, 0 = current model, 1 .. 10 : stored slots
         opponent0 : -1,

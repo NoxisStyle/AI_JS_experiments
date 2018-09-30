@@ -27,11 +27,13 @@ class Title extends Phaser.Scene {
 
         this.add.existing(new TextButton(this, 400, 350, 'Settings' , g_settings.style.buttonStyles, () => this.startSettings()).setOrigin(0.5));;
 
-        this.add.existing(new TextButton(this, 400, 400, 'Show the AI how to drive (' + userRunCount + ' runs already)' , g_settings.style.buttonStyles, () => this.startUserPractice()).setOrigin(0.5));;
+        this.add.existing(new TextButton(this, 400, 400, 'Immitation learning: Show the AI how to drive (' + userRunCount + ' runs already)' , g_settings.style.buttonStyles, () => this.startUserPractice()).setOrigin(0.5));;
 
-        this.add.existing(new TextButton(this, 400, 450, 'Train the AI', g_settings.style.buttonStyles, () => this.trainNeuralNetwork()).setOrigin(0.5));
+        this.add.existing(new TextButton(this, 400, 450, 'Reinforcement learning: Let AI learn itself' , g_settings.style.buttonStyles, () => this.startReinforcementLearning()).setOrigin(0.5));;
 
-        this.add.existing(new TextButton(this, 400, 500, 'Let the AI drive', g_settings.style.buttonStyles, () => this.startAIDemonstration()).setOrigin(0.5));
+        this.add.existing(new TextButton(this, 400, 500, 'Train the AI', g_settings.style.buttonStyles, () => this.trainNeuralNetwork()).setOrigin(0.5));
+
+        this.add.existing(new TextButton(this, 400, 550, 'Let the AI drive', g_settings.style.buttonStyles, () => this.startAIDemonstration()).setOrigin(0.5));
 
         // Handle click
         /*
@@ -69,9 +71,33 @@ class Title extends Phaser.Scene {
                 y : []  // cursorY (N, 1)
             }
         };
+        window.ship_reinforcement_model
 
         // start scene as a user
         this.scene.start('PlayGame', {mode : "USER"});
+    }
+
+    startReinforcementLearning()
+    {
+        // reset training
+        // NB: we may decide to append to previous training 
+        // and have an explicit reset button
+        window.ship_raw_dataset = 
+        {
+            runs : 0, // number of runs
+            cursorX : { // data to predict cursorX
+                x : [], // rayCast center, rayscastLeft, rayscastRight (N, 3)
+                y : []  // cursorX (N, 1)
+            },
+            cursorY : { // data to predict cursorX
+                x : [], // rayCast center, rayscastLeft, rayscastRight (N, 3)
+                y : []  // cursorY (N, 1)
+            }
+        };
+        window.ship_reinforcement_model
+
+        // start scene as a RL
+        this.scene.start('PlayGame', {mode : "RL_TRAIN"});
     }
 
     trainNeuralNetwork()

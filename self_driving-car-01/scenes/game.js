@@ -14,26 +14,8 @@ class PlayGame extends Phaser.Scene {
         this.m_mode = "USER";
         this.m_lineGraphic = null;
         this.m_controls = null;
-        this.m_ship = {
-            gameobject: null,
-            velocity: 0.0,
-            cursorXModel: null,
-            cursorYModel: null,
-            wheelTraces : null,
-            hasWheelTrace : false,
-            turn : SHIP_TURN_NO,
-            turnStart : -1,
-        }
-        this.m_ship2 = {
-            gameobject: null,
-            velocity: 0.0,
-            cursorXModel: null,
-            cursorYModel: null,
-            wheelTraces : null,
-            hasWheelTrace : false,
-            turn : SHIP_TURN_NO,
-            turnStart : -1,
-        }
+        this.m_ship = new GameVehicle();
+        this.m_ship2 = new GameVehicle();
         this.m_endOfZoneSensor = null;
         this.m_cursors = null;
         
@@ -42,6 +24,8 @@ class PlayGame extends Phaser.Scene {
         this.m_lastStoreInDatasetTime = -1;
         this.m_storeInDatasetPeriod = Math.floor(g_settings.sensor.period * 1000); //500;
         this.m_blockSize = 0;
+
+        this.m_reinforcementEnvironment = null;
 
         // Create dataset if required
         if (window.ship_raw_dataset === null || typeof window.ship_raw_dataset === 'undefined')
@@ -59,12 +43,21 @@ class PlayGame extends Phaser.Scene {
                 }
             };
         }
+
+        // create reinforcement learning model
+        window.ship_reinforcement_model = null;
+
+        window.ship_reinforcement_info = 
+        {
+            episode : 0,        // current episode
+            allRewards : []     // list of rewards of all episodes
+        };
         
     }
      
     // function to be executed when the scene is loading
     preload(){
-        console.log("#####> preload <#####");
+        //console.log("#####> preload <#####");
         // loading crate image
         this.load.image("crate", "crate.png");
 
@@ -88,16 +81,14 @@ class PlayGame extends Phaser.Scene {
         this.load.image('road_bkg_arrival_right', 'data/road_sand67.png');
         
     }
-    
 
-     
     // function to be executed once the scene has been created
     create(params){
-        console.log("#####> create <#####");
+        //console.log("#####> create <#####");
 
         // ships velocity reset
-        this.m_ship.velocity = 0;
-        this.m_ship2.velocity = 0;
+        this.m_ship.reset();
+        this.m_ship2.reset();
 
         if (params !== null && typeof params !== 'undefined')
         {
@@ -106,6 +97,11 @@ class PlayGame extends Phaser.Scene {
 
         console.log("Scene launched in " + this.m_mode + " mode");
 
+        // create reinforcement learning model if required
+        if (this.m_mode == "RL_TRAIN" && (window.ship_reinforcement_model === null || typeof window.ship_reinforcement_model === 'undefined'))
+        {
+            window.ship_reinforcement_model = new PolicyBasedAgent();
+        }
 
         // build random maze object
         let pathCount = g_settings.map.pathCount; // 3;
@@ -195,7 +191,6 @@ class PlayGame extends Phaser.Scene {
         if (g_settings.physics.environmentCategory < 0)
             g_settings.physics.environmentCategory = this.matter.world.nextCategory();
 
-        console.log("Env category " + g_settings.physics.environmentCategory);
 
         // build bkg
         let backgroundCenter = this.add.tileSprite(mazeBoundingBox.startX + textureWidth + (mazeBoundingBox.endX - mazeBoundingBox.startX - 2 * textureWidth) / 2,
@@ -402,8 +397,6 @@ class PlayGame extends Phaser.Scene {
         this.m_ship2.gameobject.setCollisionCategory(g_settings.physics.vehiclesCategory);
         //this.m_ship2.gameobject.setCollidesWith([ 1 , g_settings.physics.environmentCategory ]);
 
-
-
         // load the models
         if (this.m_mode == "AI")
         {
@@ -467,6 +460,16 @@ class PlayGame extends Phaser.Scene {
                 ,isSensor: true
              });
 
+        // Create reinforcement learning environment
+        this.m_reinforcementEnvironment = new GameReinforcementLearningEnvironment(
+            g_settings.physics.environmentCategory,
+            g_settings.physics.vehiclesCategory,
+            this.m_endOfZoneSensor,
+            this.m_ship,
+            this.m_ship2,
+            this.m_mode
+        );
+
         // Configure the camera
         const camera = this.cameras.main;
         // Constrain the camera so that it isn't allowed to move outside the maze bounding box
@@ -515,9 +518,12 @@ class PlayGame extends Phaser.Scene {
                 var bodyB = event.pairs[i].bodyB;
                 let gameOver = false;
 
+                // let environment handle collisions
+                //this.m_reinforcementEnvironment.onCollisionStart(bodyA, bodyB);
+
                 // Check if user of AI win
                 if ((bodyA === this.m_ship.gameobject.body && bodyB === this.m_endOfZoneSensor) ||
-                    (bodyA === this.m_endOfZoneSensor.body && bodyB === this.m_ship.gameobject))
+                    (bodyA === this.m_endOfZoneSensor && bodyB === this.m_ship.gameobject.body))
                 {
 
                     console.log("##### USER WINS #####");
@@ -530,7 +536,7 @@ class PlayGame extends Phaser.Scene {
                     }
                 }
                 if ((bodyA === this.m_ship2.gameobject.body && bodyB === this.m_endOfZoneSensor) ||
-                    (bodyA === this.m_endOfZoneSensor.body && bodyB === this.m_ship2.gameobject))
+                    (bodyA === this.m_endOfZoneSensor && bodyB === this.m_ship2.gameobject.body))
                 {
 
                     console.log("##### AI WINS #####");
@@ -559,6 +565,37 @@ class PlayGame extends Phaser.Scene {
                 }
             }
         }, this);
+
+        //*
+        this.matter.world.on('collisionactive', function (event) {
+            // reset collision counts
+            this.m_reinforcementEnvironment.resetCollisions();
+
+            // let environment count collisions
+            for (var i = 0; i < event.pairs.length; i++)
+            {
+                var bodyA = event.pairs[i].bodyA;
+                var bodyB = event.pairs[i].bodyB;
+
+                // let environment handle collisions
+                this.m_reinforcementEnvironment.onCollisionActive(bodyA, bodyB);
+            }
+        }, this);
+        //*/
+
+        /*
+        this.matter.world.on("collisionend", function (event) {
+
+            for (var i = 0; i < event.pairs.length; i++)
+            {
+                var bodyA = event.pairs[i].bodyA;
+                var bodyB = event.pairs[i].bodyB;
+
+                // let environment handle collisions
+                //this.m_reinforcementEnvironment.onCollisionEnd(bodyA, bodyB);
+            }
+        }, this);
+        //*/
     }
     
 
@@ -706,17 +743,31 @@ class PlayGame extends Phaser.Scene {
                 // Control vehicle 2
                 if (g_settings.versus.opponent1 > OPPONENT_USER)
                     this.controlShipWithAI(this.m_ship2, time);
-
             }
+
+            // let environment compute rewards
+            this.m_reinforcementEnvironment.updateRewards(this.m_ship, false);
+            this.m_reinforcementEnvironment.updateRewards(this.m_ship2, false);
+
+            if (this.m_mode == "RL_TRAIN")
+            {
+                // Handlke reinfoircement learning on ship 1
+                // store reward, action, ...
+                this.handleReinforcementLearning(time, this.m_ship, true);
             
+            }
 
             this.m_lastRaycastTime = time;
         }
+
+
 
         // handle ship wheel traces
         this.handleShipWheelTraces(time, this.m_ship);
         this.handleShipWheelTraces(time, this.m_ship2);
         
+        // reset collision counts
+        this.m_reinforcementEnvironment.resetCollisions();
     }
 
     castRays(ship)
@@ -853,7 +904,204 @@ class PlayGame extends Phaser.Scene {
 
             ship.hasWheelTrace = (ship.velocity >= 0.5 * g_settings.vehicle.maxVelocity && (time - ship.turnStart) >= g_settings.vehicle.delayForTraces );
         }
-        else if (predictedCursorY > g_settings.neuralnetwork.predictionThreshold)
+        else if (predictedCursorX > g_settings.neuralnetwork.predictionThreshold)
+        {
+            ship.gameobject.setAngularVelocity(g_settings.vehicle.angularVelocity * (ship.velocity/g_settings.vehicle.maxVelocity));
+
+            // handle ship turn and wheel traces
+            if (ship.turn != SHIP_TURN_RIGHT || ship.turnStart < 0)
+            {
+                ship.turn = SHIP_TURN_RIGHT;
+                ship.turnStart = time;
+            }
+
+            ship.hasWheelTrace = (ship.velocity >= 0.5 * g_settings.vehicle.maxVelocity && (time - ship.turnStart) >= g_settings.vehicle.delayForTraces );
+        }
+        else
+        {
+            ship.gameobject.setAngularVelocity(0);
+            ship.turn = SHIP_TURN_NO;
+            ship.turnStart = -1;
+            ship.hasWheelTrace = false;
+        }
+        
+    }
+
+
+    handleReinforcementLearning(time, ship, debug)
+    {
+        // current reward correspond to previous action and state
+
+        let newRaycast = this.castRays(ship.gameobject);
+        let vehicleSpeedFactor = (ship.velocity / g_settings.vehicle.maxVelocity);
+        newRaycast.push(vehicleSpeedFactor);
+
+        // store reward corresponding to action and state choosen and computed at the previous update()
+        if (ship.episodeRewards.length > 0)
+        {
+            ship.episodeRewards[ship.episodeRewards.length - 1] = ship.rewards;
+        }
+
+        // predict the action to make
+        //  > compute action probability
+        //  > choose action based on probability
+        let predictedActionSoftmax = tf.tidy(() => {
+            // NB: tf.tidy will clean up all the GPU memory used by tensors inside
+            // this function, other than the tensor that is returned.
+
+            const rays = tf.tensor2d(newRaycast, [1, 4]);
+            let prediction = window.ship_reinforcement_model.m_model.predict(rays).dataSync(); // .dataSync()[0];
+            return prediction;
+        });
+        //if (debug)
+        //    console.log("RL predicted softmax" + predictedActionSoftmax);
+
+        // Compute choice based on action using softmax result as probabilities
+        let action = window.ship_reinforcement_model.randomChoice(predictedActionSoftmax);
+        ship.episodeActions.push(action);
+        //if (debug)
+        //    console.log("RL predicted " + action);
+
+        // Apply the action
+        this.applyReinforcementAction(ship, time, action);
+
+        // Compute the state
+        ship.episodeStates.push(newRaycast);
+
+        // Temporaly push the current reward
+        // this reward will be overwritten by the value computed at the next update()
+        //  (corresponding to the result of the choosen action)
+        ship.episodeRewards.push(ship.rewards);
+
+        // check if the episode should end
+        if (ship.collisions.endOfZone || (g_settings.reinforcement.maxSteps > 0 && ship.episodeUpdateSteps >=  g_settings.reinforcement.maxSteps))
+        {
+            // episode is over
+            if (debug)
+                console.log("Episode over -- about to learn");
+
+            //if (debug)
+            //    console.log("episode rewards " + ship.episodeRewards);
+
+            // compute discounted episode rewards
+            ship.discountedEpisodeRewards = window.ship_reinforcement_model.discountAndNormalizeRewards(ship.episodeRewards);
+            //if (debug)
+            //    console.log("discounted rewards " + ship.discountedEpisodeRewards);
+
+            // train neural network
+            tf.tidy(() => {
+                // NB: tf.tidy will clean up all the GPU memory used by tensors inside
+                // this function, other than the tensor that is returned.
+    
+                //if (debug)
+                //    console.log("build tensors");
+
+                let miniBatchSize = g_settings.reinforcement.miniBatchSize;
+                if (miniBatchSize > ship.episodeStates.length)
+                    miniBatchSize = ship.episodeStates.length;
+                let states = tf.tensor2d(ship.episodeStates, [ship.episodeStates.length, ship.episodeStates[0].length]);
+                let actions = tf.tensor1d(ship.episodeActions, 'int32');
+                let discountedRewards = tf.tensor1d(ship.discountedEpisodeRewards);
+                
+                if (debug)
+                    console.log("train after actions " + ship.episodeActions);
+                
+                // train
+                window.ship_reinforcement_model.train(states, actions, discountedRewards, miniBatchSize, debug);
+            });
+
+            // Store/display stats
+            // compute the episode total reward
+            let episodeRewardsSum = window.ship_reinforcement_model.sum(ship.episodeRewards);
+
+            // Add to the list of epidode rewards
+            window.ship_reinforcement_info.allRewards.push(episodeRewardsSum);
+
+            // Compute the mean of all the episode rewards (it should increase)
+            let meanReward = window.ship_reinforcement_model.mean( window.ship_reinforcement_info.allRewards)
+            let maxReward = window.ship_reinforcement_model.max( window.ship_reinforcement_info.allRewards)
+
+            if (debug)
+            {
+                console.log("======================");
+                console.log("Episode " + window.ship_reinforcement_info.episode);
+                console.log("  episode reward : " + episodeRewardsSum);
+                console.log("  mean reward    : " + meanReward);
+                console.log("  max reward    : " + maxReward);
+                console.log("======================");
+            }
+
+            // move to next episode
+            window.ship_reinforcement_info.episode++;
+
+            this.scene.restart({ mode : this.m_mode});
+        }
+
+    }
+
+    applyReinforcementAction(ship, time, action)
+    {
+        let predictedCursorX = 0.0;
+        let predictedCursorY = 0.0;
+
+        // compute direction based on action
+        if (action == REINFORCEMENT_ACTION_LEFT ||
+            action == REINFORCEMENT_ACTION_LEFT_UP ||
+            action == REINFORCEMENT_ACTION_LEFT_DOWN)
+        {
+            predictedCursorX = -1;
+        }
+        else if (action == REINFORCEMENT_ACTION_RIGHT ||
+                action == REINFORCEMENT_ACTION_RIGHT_UP ||
+                action == REINFORCEMENT_ACTION_RIGHT_DOWN)
+        {
+            predictedCursorX = 1;
+        }
+        if (action == REINFORCEMENT_ACTION_LEFT_UP ||
+            action == REINFORCEMENT_ACTION_UP ||
+            action == REINFORCEMENT_ACTION_RIGHT_UP)
+        {
+            predictedCursorY = 1;
+        }
+        else if (action == REINFORCEMENT_ACTION_RIGHT_DOWN ||
+                action == REINFORCEMENT_ACTION_DOWN ||
+                action == REINFORCEMENT_ACTION_LEFT_DOWN)
+        {
+            predictedCursorY = -1;
+        }
+
+        if (predictedCursorY > g_settings.neuralnetwork.predictionThreshold && ship.velocity < g_settings.vehicle.maxVelocity)
+        {
+            // Acceleration
+            ship.velocity += g_settings.vehicle.velocityIncrement;
+        }
+        else if (predictedCursorY < -g_settings.neuralnetwork.predictionThreshold && ship.velocity > -g_settings.vehicle.maxVelocity)
+        {
+            // backward/brake
+            ship.velocity -= g_settings.vehicle.velocityIncrement;
+        }
+        else {
+            ship.velocity *= g_settings.vehicle.velocityAttenuation;
+        }
+        
+        // NB: PI / 180 = 0.01745
+        ship.gameobject.setVelocity(ship.velocity * Math.cos((ship.gameobject.angle - 90) * 0.01745),
+                                    ship.velocity * Math.sin((ship.gameobject.angle - 90) * 0.01745));
+        
+        if (predictedCursorX < -g_settings.neuralnetwork.predictionThreshold)
+        {
+            ship.gameobject.setAngularVelocity(-g_settings.vehicle.angularVelocity * (ship.velocity/g_settings.vehicle.maxVelocity));
+
+            // handle ship turn and wheel traces
+            if (ship.turn != SHIP_TURN_LEFT || ship.turnStart < 0)
+            {
+                ship.turn = SHIP_TURN_LEFT;
+                ship.turnStart = time;
+            }
+
+            ship.hasWheelTrace = (ship.velocity >= 0.5 * g_settings.vehicle.maxVelocity && (time - ship.turnStart) >= g_settings.vehicle.delayForTraces );
+        }
+        else if (predictedCursorX > g_settings.neuralnetwork.predictionThreshold)
         {
             ship.gameobject.setAngularVelocity(g_settings.vehicle.angularVelocity * (ship.velocity/g_settings.vehicle.maxVelocity));
 
@@ -912,6 +1160,7 @@ class PlayGame extends Phaser.Scene {
         // draw wheel sections
         ship.wheelTraces.draw();
     }
+
 
     endGame()
     {
