@@ -1,7 +1,7 @@
 
 class GameReinforcementLearningEnvironment
 {
-    constructor(environmentCategory, vehiclesCategory, endOfZoneSensor, ship1, ship2, mode) 
+    constructor(environmentCategory, vehiclesCategory, endOfZoneSensor, ship1, ship2, mode, startPosY, endPosY) 
     {
         // Initialize
         this.m_ship1 = ship1;
@@ -10,6 +10,8 @@ class GameReinforcementLearningEnvironment
         this.m_vehiclesCategory = vehiclesCategory;
         this.m_endOfZoneSensor = endOfZoneSensor;
         this.m_mode = mode;
+        this.m_startPosY = startPosY;
+        this.m_endPosY = endPosY;
     }
 
     resetRewards()
@@ -149,6 +151,12 @@ class GameReinforcementLearningEnvironment
         ship.rewards = 0;
         ship.episodeUpdateSteps++;
 
+        // compute the distance factor.
+        // It needs to be > 0 for power < 1, oitherwise return will be nan
+        let distance = Math.max( (ship.gameobject.y - this.m_startPosY) / (this.m_endPosY - this.m_startPosY), 0);
+        if (debug)
+            console.log('dist factor ' + distance);
+
         // Compute end of zone reward
         if (ship.collisions.endOfZone)
         {
@@ -180,6 +188,22 @@ class GameReinforcementLearningEnvironment
             ship.rewards += g_settings.reinforcement.notMovingReward;
             if (debug)
                 console.log("Environment not moving reward " + g_settings.reinforcement.notMovingReward);
+        }
+
+        // Compute distance reward
+        let distanceReward = g_settings.reinforcement.distanceReward * Math.pow(distance, g_settings.reinforcement.distanceRewardPower);
+        ship.rewards += distanceReward;
+        if (debug)
+            console.log("Environment distance reward " + distanceReward);
+
+        // Compute rays rewards
+        if (ship.lastRays !== null)
+        {
+            let raysReward = g_settings.reinforcement.raysRewardFactorC * ship.lastRays[0]
+                                + g_settings.reinforcement.raysRewardFactorLR * (ship.lastRays[1] + ship.lastRays[2]);
+            ship.rewards += raysReward;
+            if (debug)
+                console.log("rays reward " + raysReward);
         }
 
         if (debug)

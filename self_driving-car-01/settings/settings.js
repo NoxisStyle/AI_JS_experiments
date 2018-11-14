@@ -66,12 +66,17 @@ let g_settings =
         notMovingReward : -2,
         goingDownReward : -1,
         goingUpReward : 1,
+        distanceReward : 0,
+        distanceRewardPower : 0.4,
+        raysRewardFactorC : 1.0,
+        raysRewardFactorLR : 1.0, // -0.4,
 
-        maxSteps : 600,
-        miniBatchSize : 60,
-        episodeCount : 200,
+        repeatSameMazeCount : 5,
+        maxSteps : 1800,
+        miniBatchSize : 200,
+        epochsPerEpisode : 1,
         layers : 5,
-        units : 10,
+        units : 64,
         learningRate : 0.005,
         gammaDiscountRate : 0.95
     },
@@ -151,7 +156,7 @@ function buildSettings()
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.sensor.period' value='" + g_settings.sensor.period + "'/><br/>";
 
     // neural network parameters
-    html += "<h1>Neural network</h1>";
+    html += "<h1>Supervised learning method</h1>";
     html += "Number of epochs:";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.neuralnetwork.epochs' value='" + g_settings.neuralnetwork.epochs + "'/><br/>";
     html += "Number of layers:";
@@ -180,6 +185,42 @@ function buildSettings()
     {
         html += "<button style='position:absolute;right:0px;' id='settings.neuralnetwork.export' disabled >Export neural networks</button><br/>";
     }
+
+    html += "<h1>Reinforcement learning method</h1>";
+    html += "Env collision reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.environmentCollisionReward' value='" + g_settings.reinforcement.environmentCollisionReward + "'/><br/>";
+    html += "End-zone collision reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.endZoneCollisionReward' value='" + g_settings.reinforcement.endZoneCollisionReward + "'/><br/>";
+    html += "Not moving reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.notMovingReward' value='" + g_settings.reinforcement.notMovingReward + "'/><br/>";
+    html += "Going down reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.goingDownReward' value='" + g_settings.reinforcement.goingDownReward + "'/><br/>";
+    html += "Going up reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.goingUpReward' value='" + g_settings.reinforcement.goingUpReward + "'/><br/>";
+  
+    html += "<p><i>The distance reward will be distanceReward * (distance ^ distanceRewardpower) <br/>Where distance is normalized and belongs to [0 1].</i></p><br/>";
+    html += "Distance reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.distanceReward' value='" + g_settings.reinforcement.distanceReward + "'/><br/>";
+    html += "Distance reward power:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.distanceRewardPower' value='" + g_settings.reinforcement.distanceRewardPower + "'/><br/>";
+
+    html += "Repeat same maze count:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.repeatSameMazeCount' value='" + g_settings.reinforcement.repeatSameMazeCount + "'/><br/>";
+    html += "Max steps per episode:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.maxSteps' value='" + g_settings.reinforcement.maxSteps + "'/><br/>";
+    html += "Mini batch-size:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.miniBatchSize' value='" + g_settings.reinforcement.miniBatchSize + "'/><br/>";
+    html += "Epochs per episode:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.epochsPerEpisode' value='" + g_settings.reinforcement.epochsPerEpisode + "'/><br/>";
+    html += "Number of layers:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.layers' value='" + g_settings.reinforcement.layers + "'/><br/>";
+    html += "Number of units per layer:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.units' value='" + g_settings.reinforcement.units + "'/><br/>";
+    html += "Learning rate:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.learningRate' value='" + g_settings.reinforcement.learningRate + "'/><br/>";
+    html += "Discount rate (gamma):";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.gammaDiscountRate' value='" + g_settings.reinforcement.gammaDiscountRate + "'/><br/>";
+
 
     html += "<h1>Versus</h1>";
     html += "<div id='versus.opponents'></div>";
@@ -243,6 +284,25 @@ function saveSettings()
         g_settings.neuralnetwork.layers = getElementValue("settings.neuralnetwork.layers", parseInt, 1, true, 65535, true);
         g_settings.neuralnetwork.units = getElementValue("settings.neuralnetwork.units", parseInt, 1, true, 65535, true);
         g_settings.neuralnetwork.predictionThreshold = getElementValue("settings.neuralnetwork.predictionThreshold", parseFloat, 0.0, true, 1.0, true);
+
+        g_settings.reinforcement.environmentCollisionReward = getElementValue("settings.reinforcement.environmentCollisionReward", parseInt, -1000, true, 1000, true);
+        g_settings.reinforcement.endZoneCollisionReward = getElementValue("settings.reinforcement.endZoneCollisionReward", parseInt, -1000, true, 1000, true);
+        g_settings.reinforcement.notMovingReward = getElementValue("settings.reinforcement.notMovingReward", parseInt,  -1000, true, 1000, true);
+        g_settings.reinforcement.goingDownReward = getElementValue("settings.reinforcement.goingDownReward", parseInt, -1000, true, 1000, true);
+        g_settings.reinforcement.goingUpReward = getElementValue("settings.reinforcement.goingUpReward", parseInt, -1000, true, 1000, true);
+
+        g_settings.reinforcement.distanceReward = getElementValue("settings.reinforcement.distanceReward", parseInt, -1000, true, 1000, true);
+        g_settings.reinforcement.distanceRewardPower = getElementValue("settings.reinforcement.distanceRewardPower", parseFloat, 0, false, 10, true);
+
+        g_settings.reinforcement.repeatSameMazeCount = getElementValue("settings.reinforcement.repeatSameMazeCount", parseInt, 1, true, 65535, true);
+        g_settings.reinforcement.maxSteps = getElementValue("settings.reinforcement.maxSteps", parseInt, 1, true, 65535, true);
+        g_settings.reinforcement.miniBatchSize = getElementValue("settings.reinforcement.miniBatchSize", parseInt, 1, true, 65535, true);
+        g_settings.reinforcement.epochsPerEpisode = getElementValue("settings.reinforcement.epochsPerEpisode", parseInt, 1, true, 65535, true);
+        g_settings.reinforcement.layers = getElementValue("settings.reinforcement.layers", parseInt, 1, true, 65535, true);
+        g_settings.reinforcement.units = getElementValue("settings.reinforcement.units", parseInt, 1, true, 65535, true);
+        g_settings.reinforcement.learningRate = getElementValue("settings.reinforcement.learningRate", parseFloat, 0.0, false, 1.0, true);
+        g_settings.reinforcement.gammaDiscountRate = getElementValue("settings.reinforcement.gammaDiscountRate", parseFloat, 0.0, true, 1.0, true);
+
 
         g_settings.versus.opponent0 = getElementValue("settings.versus.opponent0", parseInt, -1, true, 20, true);
         g_settings.versus.opponent1 = getElementValue("settings.versus.opponent1", parseInt, -1, true, 20, true);

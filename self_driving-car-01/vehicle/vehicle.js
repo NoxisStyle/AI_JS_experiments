@@ -17,12 +17,14 @@ class GameVehicle
             environment : 0,
             endOfZone : false
         }
+        this.lastRays = null;
 
         this.m_reinforcementModel = null;
         this.episodeUpdateSteps = 0;
         this.episodeRewards = [];
         this.episodeActions = [];
         this.episodeStates = [];
+        this.episodeConcatStates = [];
         this.discountedEpisodeRewards = [];
 
     }
@@ -33,11 +35,13 @@ class GameVehicle
         this.rewards =  0;
         this.collisions.environment = 0;
         this.collisions.endOfZone = false;
+        this.lastRays = null;
 
         this.episodeUpdateSteps = 0;
         this.episodeRewards = [];
         this.episodeActions = [];
         this.episodeStates = [];
+        this.episodeConcatStates = [];
         this.discountedEpisodeRewards = [];
     }
 }

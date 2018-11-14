@@ -11,9 +11,11 @@ class PolicyBasedAgent
 {
     constructor()
     {
-        this.m_inputCount = 4;
+        console.log("Init PolicyBasedAgent");
+        this.m_inputCount = 5 * 2; // 2 concat states of 5 elts
         this.m_actionCount = 8;
         this.m_layers = [];
+        this.softmaxLayer = null;
         this.m_policyOptimizer = tf.train.adam(g_settings.reinforcement.learningRate);
 
         this.m_model = this.createPolicyNeuralNetwork(this.m_inputCount, 
@@ -21,6 +23,10 @@ class PolicyBasedAgent
                                                         g_settings.reinforcement.layers,
                                                         this.m_actionCount);
 
+        // Get a surface
+        this.m_visualizationSurface = tfvis.visor().surface({ name: 'PolicyEntropy', tab: 'Charts' });
+        this.m_visualizationPolicyData = [];
+        this.m_visualizationPolicyIndex = 0;
     }
 
     discountAndNormalizeRewards(rewards)
@@ -80,20 +86,23 @@ class PolicyBasedAgent
         let layerFinal = tf.layers.softmax();
         model.add(layerFinal);
         //this.m_layers.push(layerFinal);
+        this.softmaxLayer = layerFinal;
 
         model.compile({loss: 'meanSquaredError', optimizer: this.m_policyOptimizer});
 
         // TODO:
         /**
          * try :
-         *   https://medium.com/@jonathan_hui/rl-policy-gradients-explained-9b13b688b146
-         *   https://gist.github.com/simoninithomas/7a3357966eaebd58dddb6166c9135930#file-cartpole-reinforce-monte-carlo-policy-gradients-ipynb
-         *   - no activation on the last dense layer (If unspecified, no activation is applied. Optional ) => (OK)
-         *   - separate softmax activation in separate layer : tf.layers.softmax => (OK) 
-         *   - internalPredict without softmax layer => (OK)
-         *   - compute the loss with :
-         *     - tf.losses.softmaxCrossEntropy()
-         *     - tf.mean
+         *   - change state' so that its is the combination of several successive states (add time/velocity/movement)
+         *   - try training the agent several times on the same Maze (ok)
+         *   - http://amid.fish/reproducing-deep-rl
+         *   - graph on mean rewards (ok)
+         *   - improve reward function
+         *      - https://medium.com/@BonsaiAI/deep-reinforcement-learning-models-tips-tricks-for-writing-reward-functions-a84fe525e8e0
+         *      - https://bons.ai/blog/reward-functions-reinforcement-learning-video
+         *         1 - (dist / dist_max) ^ 0.4
+         *      - https://res.mdpi.com/sensors/sensors-18-03575/article_deploy/sensors-18-03575.pdf?filename=&attachment=1
+         *      - https://medium.com/@joshpatterson_5192/deep-q-learning-for-self-driving-cars-c482f1a39367
          */
 
         return model;
@@ -103,37 +112,57 @@ class PolicyBasedAgent
     {
         const datasetSize = states.shape[0];
 
-        // Use mini-batch gradient descent
-        for (let start = 0; start < datasetSize; start += miniBatchSize)
+        for (let epoch = 0; epoch < g_settings.reinforcement.epochsPerEpisode; epoch++)
         {
-            // build the minibatch
-            let end = (start + miniBatchSize < datasetSize) ?  miniBatchSize  : (datasetSize - start);
-            const statesSlice = states.slice(start, end);
-            const actionsSlice = actions.slice(start, end);
-            const discountedRewardsSlice = discountedRewards.slice(start, end);
+            // Use mini-batch gradient descent
+            for (let start = 0; start < datasetSize; start += miniBatchSize)
+            {
+                // build the minibatch
+                let end = (start + miniBatchSize < datasetSize) ?  miniBatchSize  : (datasetSize - start);
+                const statesSlice = states.slice(start, end);
+                const actionsSlice = actions.slice(start, end);
+                const discountedRewardsSlice = discountedRewards.slice(start, end);
 
-            // use the internal loss function to provide the loss to minimize
-            // In fact this is the policy score function to maximize
-            this.m_policyOptimizer.minimize(() => {
-                let softmaxPredictions = this.internalPredictWithoutSoftmax(statesSlice);
-                let loss = this.internalLoss(softmaxPredictions, actionsSlice, discountedRewardsSlice);
-                if (debug)
-                    console.log(loss.dataSync());
-                return loss;
-            });
+                // use the internal loss function to provide the loss to minimize
+                // In fact this is the policy score function to maximize
+                this.m_policyOptimizer.minimize(() => {
+                    let predictionWithoutSoftmax = this.internalPredictWithoutSoftmax(statesSlice, false);
+                    let loss = this.internalLoss(predictionWithoutSoftmax, actionsSlice, discountedRewardsSlice, debug);
 
-            // dispose tensors
-            statesSlice.dispose();
-            actionsSlice.dispose();
-            discountedRewardsSlice.dispose();
+                    if (debug)
+                    {
+                        let policyEntropy = this.internalPolicyEntropy(statesSlice).dataSync()[0];
+                        console.log("Epoch " + epoch + " - policy entropy = " + policyEntropy);
+
+                        this.m_visualizationPolicyData.push(
+                            { x: 1.0 * this.m_visualizationPolicyIndex++, 
+                            y: policyEntropy 
+                            }
+                        );
+
+                    }
+
+                    return loss;
+                });
+
+                // dispose tensors
+                statesSlice.dispose();
+                actionsSlice.dispose();
+                discountedRewardsSlice.dispose();
+            }
         }
+
+        // Render policy entropy data
+        //console.log(this.m_visualizationPolicyData);
+        let series = { values : [ this.m_visualizationPolicyData] , series : ["PolicyEntropy"]};
+        tfvis.render.linechart(series, this.m_visualizationSurface, {});
     }
 
 
     // Internal function defining the Loss function
     // This is in fact the Policy score function to maximize
     // -log(p) * discounted_rewards
-    internalLoss(predictedAction, actions, discounted_rewards)
+    internalLoss(predictedAction, actions, discounted_rewards, debug)
     {
         return tf.tidy(() => {
 
@@ -157,12 +186,17 @@ class PolicyBasedAgent
             // compute the reduced mean of the weighted negative likelihoods (weighted by discounted rewards)
             let loss = tf.mean(tf.mul(neg_log_prob , discounted_rewards)); // reduce_mean (weighted_negative_likelihoods)
 
+            if (debug)
+            {
+                console.log("neglogprob = " + neg_log_prob.dataSync()[0] + " - loss =" + loss.dataSync()[0]);
+            }
+
             return loss;
         });
     }
 
     // internal prediction
-    internalPredictWithoutSoftmax(state)
+    internalPredictWithoutSoftmax(state, useSoftmax)
     {
         return tf.tidy(() => {
             // NB: We cannot use m_model.predict() as we do not want the softmax to be applied
@@ -171,13 +205,33 @@ class PolicyBasedAgent
             let layerCount = this.m_layers.length;
             let data = state;
 
+            // Apply dense layers
             for (let i = 0; i < layerCount; i++)
             {
                 data = this.m_layers[i].apply(data);
             }
+
+            // Apply softmax if required
+            if (useSoftmax && this.softmaxLayer !== null)
+            {
+                data = this.softmaxLayer.apply(data);
+            }
+
             return data;
         });
     }
+
+    internalPolicyEntropy(statesSlice)
+    {
+        let entropy =  tf.tidy(() => {
+            let predictionWithSoftmax = this.internalPredictWithoutSoftmax(statesSlice, true);
+            return tf.mul(tf.scalar(-1), tf.sum(tf.mul(tf.log(predictionWithSoftmax), predictionWithSoftmax)));
+        });
+
+        return entropy;
+    }
+
+    
 
     // function to make a random choice
     // equivalent of numpy.random.choice()

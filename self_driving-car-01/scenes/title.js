@@ -94,7 +94,8 @@ class Title extends Phaser.Scene {
                 y : []  // cursorY (N, 1)
             }
         };
-        window.ship_reinforcement_model
+
+        window.ship_reinforcement_model = null;
 
         // start scene as a RL
         this.scene.start('PlayGame', {mode : "RL_TRAIN"});

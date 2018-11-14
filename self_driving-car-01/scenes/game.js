@@ -27,6 +27,11 @@ class PlayGame extends Phaser.Scene {
 
         this.m_reinforcementEnvironment = null;
 
+        this.m_maze = null;
+
+        this.m_debugRewards1 = false;
+        this.m_debugRewards2 = false;
+
         // Create dataset if required
         if (window.ship_raw_dataset === null || typeof window.ship_raw_dataset === 'undefined')
         {
@@ -52,6 +57,10 @@ class PlayGame extends Phaser.Scene {
             episode : 0,        // current episode
             allRewards : []     // list of rewards of all episodes
         };
+
+        this.m_visualizationSurface = tfvis.visor().surface({ name: 'Rewards', tab: 'Charts' });
+        this.m_actionSurface = tfvis.visor().surface({ name: 'Actions', tab: 'Charts' });
+        this.m_visualizationRewardData = [];
         
     }
      
@@ -101,6 +110,9 @@ class PlayGame extends Phaser.Scene {
         if (this.m_mode == "RL_TRAIN" && (window.ship_reinforcement_model === null || typeof window.ship_reinforcement_model === 'undefined'))
         {
             window.ship_reinforcement_model = new PolicyBasedAgent();
+            window.ship_reinforcement_info.episode = 0;
+            window.ship_reinforcement_info.allRewards = [];
+            this.m_visualizationRewardData = [];
         }
 
         // build random maze object
@@ -111,14 +123,32 @@ class PlayGame extends Phaser.Scene {
         {
             mazeCreationHeight = g_settings.map.aiHeight; //129; //129;
         }
-        let mazePaths = [];
-        for (let i = 0; i < pathCount; i++)
+
+        let maze = null;
+        if (this.m_maze !== null && this.m_mode == "RL_TRAIN" 
+            && window.ship_reinforcement_info.episode % g_settings.reinforcement.repeatSameMazeCount != 0)
         {
-            let mazePath = createMazePath(mazeCreationWidth, mazeCreationHeight, g_settings.map.initialPeriod, g_settings.map.deltaFactor); //  8, 1.0
-            mazePaths.push(mazePath);
+            // reuse same maze
+            maze = this.m_maze;
         }
-        let maze = buildMazeFormMazeFromPaths(mazePaths, mazeCreationWidth, mazeCreationHeight);
-        drawMaze(maze);
+        else
+        {
+            let mazePaths = [];
+            for (let i = 0; i < pathCount; i++)
+            {
+                let mazePath = createMazePath(mazeCreationWidth, mazeCreationHeight, g_settings.map.initialPeriod, g_settings.map.deltaFactor); //  8, 1.0
+                mazePaths.push(mazePath);
+            }
+
+            // build random maze object
+            maze = buildMazeFormMazeFromPaths(mazePaths, mazeCreationWidth, mazeCreationHeight);
+            drawMaze(maze);
+        }
+
+        // Store the maze
+        this.m_maze = maze;
+
+        // window.ship_reinforcement_info.episode++;
 
         // build maze renderiong and physics with tilemap
         /*
@@ -467,7 +497,9 @@ class PlayGame extends Phaser.Scene {
             this.m_endOfZoneSensor,
             this.m_ship,
             this.m_ship2,
-            this.m_mode
+            this.m_mode,
+            shipStartPosition.y,
+            endZoneSensorPosition.y
         );
 
         // Configure the camera
@@ -608,6 +640,10 @@ class PlayGame extends Phaser.Scene {
         let cursorX = 0.0;
         let cursorY = 0.0;
 
+        // reset last rays
+        this.m_ship.lastRays = null;
+        this.m_ship2.lastRays = null;
+
         // Update vehicle with user control
         if (this.m_mode == "USER" || g_settings.versus.opponent0 == OPPONENT_USER)
         {
@@ -681,6 +717,7 @@ class PlayGame extends Phaser.Scene {
             if (this.m_mode == "USER")
             {
                 let newRaycast = this.castRays(this.m_ship.gameobject); // [centerRayLengthNormalized, leftRayLengthNormalized, rightRayLengthNormalized, vehicleSpeedFactor];
+                this.m_ship.lastRays = newRaycast.slice(0);
 
                 // Check if results must be stored in the dataset
                 if (this.m_lastStoreInDatasetTime < 0 || time - this.m_lastStoreInDatasetTime > this.m_storeInDatasetPeriod)
@@ -745,9 +782,20 @@ class PlayGame extends Phaser.Scene {
                     this.controlShipWithAI(this.m_ship2, time);
             }
 
+            // Compute rays needed for environment rewards if not computed yet
+            // (RL case)
+            if (this.m_ship.lastRays === null)
+            {
+                this.m_ship.lastRays = this.castRays(this.m_ship.gameobject);
+            }
+            if (this.m_ship2.lastRays === null)
+            {
+                this.m_ship2.lastRays = this.castRays(this.m_ship2.gameobject);
+            }
+
             // let environment compute rewards
-            this.m_reinforcementEnvironment.updateRewards(this.m_ship, false);
-            this.m_reinforcementEnvironment.updateRewards(this.m_ship2, false);
+            this.m_reinforcementEnvironment.updateRewards(this.m_ship, this.m_debugRewards1);
+            this.m_reinforcementEnvironment.updateRewards(this.m_ship2, this.m_debugRewards2);
 
             if (this.m_mode == "RL_TRAIN")
             {
@@ -839,6 +887,7 @@ class PlayGame extends Phaser.Scene {
     controlShipWithAI(ship, time)
     {
         let newRaycast = this.castRays(ship.gameobject); // [centerRayLengthNormalized, leftRayLengthNormalized, rightRayLengthNormalized, vehicleSpeedFactor];
+        ship.lastRays = newRaycast.slice(0);
         let predictedCursorX = 0.0;
         let predictedCursorY = 0.0;
 
@@ -931,15 +980,30 @@ class PlayGame extends Phaser.Scene {
     handleReinforcementLearning(time, ship, debug)
     {
         // current reward correspond to previous action and state
-
-        let newRaycast = this.castRays(ship.gameobject);
+        // build state from raycast
+        let newState = this.castRays(ship.gameobject);
         let vehicleSpeedFactor = (ship.velocity / g_settings.vehicle.maxVelocity);
-        newRaycast.push(vehicleSpeedFactor);
+        // add vehicle velocity to the state
+        newState.push(vehicleSpeedFactor);
+        // Add vehicle angle to the state
+        newState.push((ship.gameobject.angle - 90) * 0.01745);
 
         // store reward corresponding to action and state choosen and computed at the previous update()
         if (ship.episodeRewards.length > 0)
         {
             ship.episodeRewards[ship.episodeRewards.length - 1] = ship.rewards;
+        }
+
+        // build the concat state (from several successive states)
+        let newConcatState = null;
+        if (ship.episodeStates.length == 0)
+        {
+            // No previous state, use two times the same state
+            newConcatState = newState.concat(newState);
+        }
+        else
+        {
+            newConcatState = ship.episodeStates[ship.episodeStates.length - 1].concat(newState);
         }
 
         // predict the action to make
@@ -949,8 +1013,8 @@ class PlayGame extends Phaser.Scene {
             // NB: tf.tidy will clean up all the GPU memory used by tensors inside
             // this function, other than the tensor that is returned.
 
-            const rays = tf.tensor2d(newRaycast, [1, 4]);
-            let prediction = window.ship_reinforcement_model.m_model.predict(rays).dataSync(); // .dataSync()[0];
+            const stateTensor = tf.tensor2d(newConcatState, [1, newConcatState.length]); // tf.tensor2d(newState, [1, 5]);
+            let prediction = window.ship_reinforcement_model.m_model.predict(stateTensor).dataSync(); // .dataSync()[0];
             return prediction;
         });
         //if (debug)
@@ -966,7 +1030,8 @@ class PlayGame extends Phaser.Scene {
         this.applyReinforcementAction(ship, time, action);
 
         // Compute the state
-        ship.episodeStates.push(newRaycast);
+        ship.episodeStates.push(newState);
+        ship.episodeConcatStates.push(newConcatState);
 
         // Temporaly push the current reward
         // this reward will be overwritten by the value computed at the next update()
@@ -997,14 +1062,16 @@ class PlayGame extends Phaser.Scene {
                 //    console.log("build tensors");
 
                 let miniBatchSize = g_settings.reinforcement.miniBatchSize;
-                if (miniBatchSize > ship.episodeStates.length)
-                    miniBatchSize = ship.episodeStates.length;
-                let states = tf.tensor2d(ship.episodeStates, [ship.episodeStates.length, ship.episodeStates[0].length]);
+                if (miniBatchSize > ship.episodeConcatStates.length)
+                    miniBatchSize = ship.episodeConcatStates.length;
+                let states = tf.tensor2d(ship.episodeConcatStates, [ship.episodeConcatStates.length, ship.episodeConcatStates[0].length]);
                 let actions = tf.tensor1d(ship.episodeActions, 'int32');
                 let discountedRewards = tf.tensor1d(ship.discountedEpisodeRewards);
                 
                 if (debug)
                     console.log("train after actions " + ship.episodeActions);
+
+                tfvis.render.histogram(ship.episodeActions, this.m_actionSurface, {});
                 
                 // train
                 window.ship_reinforcement_model.train(states, actions, discountedRewards, miniBatchSize, debug);
@@ -1030,6 +1097,15 @@ class PlayGame extends Phaser.Scene {
                 console.log("  max reward    : " + maxReward);
                 console.log("======================");
             }
+
+            // Add mean reward to visualization
+            this.m_visualizationRewardData.push(
+                { x: 1.0 *  window.ship_reinforcement_info.episode, 
+                  y: meanReward 
+                }
+            );
+            let series = { values : [ this.m_visualizationRewardData] , series : ["MeanRewards"]};
+            tfvis.render.linechart(series, this.m_visualizationSurface, {});
 
             // move to next episode
             window.ship_reinforcement_info.episode++;
