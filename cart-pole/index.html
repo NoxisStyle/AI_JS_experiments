@@ -1,0 +1,97 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <!-- //cdn.jsdelivr.net/npm/phaser@3.0.0/dist/phaser.min.js" -->
+    <script src="//cdn.jsdelivr.net/npm/phaser@3.11.0/dist/phaser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.12.5"> </script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+    <script src="utils/textbutton.js"></script>
+    <script src="utils/progressbar.js"></script>
+    <script src="utils/graph.js"></script>
+    <script src="settings/settings.js"></script>
+    <script src="scenes/title.js"></script>
+    <script src="scenes/game.js"></script>
+    <script src="reinforcement/environment.js"></script>
+    <script src="reinforcement/policybased.js"></script>
+
+    <style type="text/css">
+        body {
+            margin: 0;
+            font-family: 'Verdana', Helvetica, Arial, sans-serif !important;
+        }
+        
+        #overlay {
+            visibility: hidden;
+            position: absolute;
+            top: 20px;
+            bottom: 20px;
+            width:50%;
+            margin-left: 25%;
+            /*margin: 0 auto;*/
+            text-align:left;
+            background-color: #FFFFFF;
+            z-index: 1000;
+            overflow-y: scroll;
+            box-shadow: -1px 2px 15px -1px #000;
+        }
+        
+        #overlay div {
+            margin: auto;
+            background-color: #fff;
+            padding:15px;
+        }
+        
+        .close {
+            width: 50px;
+            height: 50px;
+            /*position: fixed;*/
+            position: absolute;
+            background-color: #FF0000;
+            color:#FFFFFF;
+            /*background-image: url(assets/close.png);*/
+            right: 20px;
+            top: 20px;
+            border: none;
+        }
+        
+    </style>
+
+</head>
+<body>
+
+    <script>
+	//import { raycast } from '/MatterJS_Raycast/raycast_es6.js';
+	
+	// tutorials : https://labs.phaser.io/edit.html?src=src/physics/matterjs/restart%20physics%20scene.js
+	
+    var config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        parent: "gameContainer",
+        physics: {
+            default: 'matter',
+            matter: {
+                //debug: true,
+                gravity: {
+                x: 0,
+                y: 0}
+            }   
+        },
+        scene: [Title, PlayGame]
+    };
+
+    let game = new Phaser.Game(config);
+
+    </script>
+
+    <div id="gameContainer" style="width : 900px; margin: 0 auto;"></div>
+
+    <!-- Settings -->
+    <div id="overlay">
+        <div id="settingsContent">
+        </div>
+    </div>
+
+</body>
+</html>

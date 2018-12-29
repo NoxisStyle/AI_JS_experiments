@@ -1,19 +1,12 @@
-const REINFORCEMENT_ACTION_LEFT         = 0;
-const REINFORCEMENT_ACTION_LEFT_UP      = 1;
-const REINFORCEMENT_ACTION_UP           = 2;
-const REINFORCEMENT_ACTION_RIGHT_UP     = 3;
-const REINFORCEMENT_ACTION_RIGHT        = 4;
-const REINFORCEMENT_ACTION_RIGHT_DOWN   = 5;
-const REINFORCEMENT_ACTION_DOWN         = 6;
-const REINFORCEMENT_ACTION_LEFT_DOWN    = 7;
+
 
 class PolicyBasedAgent
 {
     constructor()
     {
         console.log("Init PolicyBasedAgent");
-        this.m_inputCount = 5 * 2; // 2 concat states of 5 elts
-        this.m_actionCount = 8;
+        this.m_inputCount = 4;
+        this.m_actionCount = 2;
         this.m_layers = [];
         this.softmaxLayer = null;
         this.m_policyOptimizer = tf.train.adam(g_settings.reinforcement.learningRate);
@@ -51,7 +44,7 @@ class PolicyBasedAgent
         discountedRewards = discountedRewards.map(function(value) {
             return (value - mean) / std;
         });
-        //console.log("disc rw " + discountedRewards);
+        console.log("disc rw " + discountedRewards);
 
         return discountedRewards;
     }
