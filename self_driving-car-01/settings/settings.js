@@ -64,7 +64,7 @@ let g_settings =
         environmentCollisionReward : -10,
         endZoneCollisionReward : 100,
         notMovingReward : -2,
-        goingDownReward : -1,
+        goingDownReward : 0,
         goingUpReward : 1,
         distanceReward : 0,
         distanceRewardPower : 0.4,

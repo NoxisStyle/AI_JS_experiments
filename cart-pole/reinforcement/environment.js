@@ -32,6 +32,9 @@ class CartPoleEnvironment
 
     reset()
     {
+        // TODO : fix so ,that we have 
+        // self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
+        
         // Cart position, meters.
         this.m_x = Math.random() - 0.5;
         // Cart velocity.

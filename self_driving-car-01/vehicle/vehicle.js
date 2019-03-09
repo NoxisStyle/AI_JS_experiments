@@ -27,6 +27,8 @@ class GameVehicle
         this.episodeConcatStates = [];
         this.discountedEpisodeRewards = [];
 
+        this.m_directionRewardView = null;
+
     }
 
     reset()

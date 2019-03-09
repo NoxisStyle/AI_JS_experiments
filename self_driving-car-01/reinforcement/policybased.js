@@ -126,23 +126,26 @@ class PolicyBasedAgent
                 // use the internal loss function to provide the loss to minimize
                 // In fact this is the policy score function to maximize
                 this.m_policyOptimizer.minimize(() => {
-                    let predictionWithoutSoftmax = this.internalPredictWithoutSoftmax(statesSlice, false);
-                    let loss = this.internalLoss(predictionWithoutSoftmax, actionsSlice, discountedRewardsSlice, debug);
 
-                    if (debug)
-                    {
-                        let policyEntropy = this.internalPolicyEntropy(statesSlice).dataSync()[0];
-                        console.log("Epoch " + epoch + " - policy entropy = " + policyEntropy);
+                    return tf.tidy(() => {
+                        let predictionWithoutSoftmax = this.internalPredict(statesSlice, false);
+                        let loss = this.internalLoss(predictionWithoutSoftmax, actionsSlice, discountedRewardsSlice, debug);
 
-                        this.m_visualizationPolicyData.push(
-                            { x: 1.0 * this.m_visualizationPolicyIndex++, 
-                            y: policyEntropy 
-                            }
-                        );
+                        if (debug)
+                        {
+                            let policyEntropy = this.internalPolicyEntropy(statesSlice).dataSync()[0];
+                            console.log("Epoch " + epoch + " - policy entropy = " + policyEntropy);
 
-                    }
+                            this.m_visualizationPolicyData.push(
+                                { x: 1.0 * this.m_visualizationPolicyIndex++, 
+                                y: policyEntropy 
+                                }
+                            );
 
-                    return loss;
+                        }
+
+                        return loss;
+                    });
                 });
 
                 // dispose tensors
@@ -178,25 +181,45 @@ class PolicyBasedAgent
             //*/
 
             // compute the action as a one hot encoded vector
-            //console.log("actions " + this.m_actionCount + " " + actions);
-            const one_hot = tf.oneHot(actions, this.m_actionCount);
+            if (debug)
+                console.log("actions " + this.m_actionCount + " " + actions);
+            const choosen_actions_one_hot = tf.oneHot(actions, this.m_actionCount);
 
             // compute the negative likelihoods
-            let neg_log_prob = tf.losses.softmaxCrossEntropy(one_hot.asType("float32"), predictedAction);
+            let neg_log_prob = tf.losses.softmaxCrossEntropy(choosen_actions_one_hot.asType("float32"), predictedAction);
             // compute the reduced mean of the weighted negative likelihoods (weighted by discounted rewards)
             let loss = tf.mean(tf.mul(neg_log_prob , discounted_rewards)); // reduce_mean (weighted_negative_likelihoods)
 
+            // Other method 1 ???
+            let probabilities = predictedAction.softmax();
+            let good_probabilities = tf.sum(tf.mul(probabilities, choosen_actions_one_hot.asType("float32")), [1]); // log missing on prob ?
+            // maximize the log probability
+            let log_probabilities = tf.log(good_probabilities); // log done at wrong location ?
+            let eligibility = tf.mul(log_probabilities ,discounted_rewards);
+            let loss_v2 = tf.neg(tf.sum(eligibility));
+
+            // Other method 2 ???
+            let log_prob_v3 = tf.neg(tf.sum( tf.mul(choosen_actions_one_hot.asType("float32") , tf.log(probabilities)), [1]));
+            let eligibilityV3 = tf.mul(log_prob_v3 ,discounted_rewards);
+            let total_loss_v3 = tf.sum(eligibilityV3);
+
             if (debug)
             {
-                console.log("neglogprob = " + neg_log_prob.dataSync()[0] + " - loss =" + loss.dataSync()[0]);
+
+
+                //console.log("neglogprob = " + neg_log_prob.dataSync()[0] + " - loss =" + loss.dataSync()[0]);
+                console.log("neglogprob = " + neg_log_prob.dataSync() + " - loss = " + loss.dataSync() + " logProbV2 = " + log_probabilities.dataSync() + " lossV2 = " + loss_v2.dataSync() );
+                console.log("log_prob_v3 = " + log_prob_v3.dataSync() + " - loss_v3 = " + total_loss_v3.dataSync());
+            
             }
 
-            return loss;
+            //return loss;
+            return total_loss_v3;
         });
     }
 
     // internal prediction
-    internalPredictWithoutSoftmax(state, useSoftmax)
+    internalPredict(state, useSoftmax)
     {
         return tf.tidy(() => {
             // NB: We cannot use m_model.predict() as we do not want the softmax to be applied
@@ -224,7 +247,7 @@ class PolicyBasedAgent
     internalPolicyEntropy(statesSlice)
     {
         let entropy =  tf.tidy(() => {
-            let predictionWithSoftmax = this.internalPredictWithoutSoftmax(statesSlice, true);
+            let predictionWithSoftmax = this.internalPredict(statesSlice, true);
             return tf.mul(tf.scalar(-1), tf.sum(tf.mul(tf.log(predictionWithSoftmax), predictionWithSoftmax)));
         });
 

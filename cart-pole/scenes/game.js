@@ -40,6 +40,7 @@ class PlayGame extends Phaser.Scene {
 
         // create reinforcement learning model
         window.reinforcement_model = null;
+        window.aiModeInitialized = false;
 
         window.reinforcement_info = 
         {
@@ -52,6 +53,8 @@ class PlayGame extends Phaser.Scene {
         this.m_visualizationRewardData = [];
 
         this.m_cartPoleInfo = new CartPoleInfo();
+
+        this.m_scoreText = null;
         
     }
      
@@ -95,6 +98,7 @@ class PlayGame extends Phaser.Scene {
         }
 
         console.log("Scene launched in " + this.m_mode + " mode");
+        console.log(tf.memory());
 
         // create reinforcement learning model if required
         if (this.m_mode == "RL_TRAIN" && (window.reinforcement_model === null || typeof window.reinforcement_model === 'undefined'))
@@ -102,7 +106,19 @@ class PlayGame extends Phaser.Scene {
             window.reinforcement_model = new PolicyBasedAgent();
             window.reinforcement_info.episode = 0;
             window.reinforcement_info.allRewards = [];
+            window.aiModeInitialized = false;
             this.m_visualizationRewardData = [];
+        }
+        else if (this.m_mode == "AI" && window.aiModeInitialized == false)
+        {
+            window.aiModeInitialized = true;
+            window.reinforcement_info.episode = 0;
+            window.reinforcement_info.allRewards = [];
+            this.m_visualizationRewardData = [];
+        }
+        else if (this.m_mode == "USER")
+        {
+            window.aiModeInitialized = false;
         }
 
         // Create the environment
@@ -162,6 +178,17 @@ class PlayGame extends Phaser.Scene {
                                 .setOrigin(1.0)
                                 .setScrollFactor(0));
         
+        if (window.reinforcement_info.episode <= 0)
+            this.m_scoreText = this.add.text(10, 10, 'Episode: 0 - Last/Mean Reward: 0 / 0', g_settings.style.textStyle1).setOrigin(0.0);
+        else
+        {
+            let meanReward = this.mean( window.reinforcement_info.allRewards);
+            let lastReward = window.reinforcement_info.allRewards[window.reinforcement_info.allRewards.length - 1];
+
+            this.m_scoreText = this.add.text(10, 10, 'Episode: ' +  window.reinforcement_info.episode + ' - Last/Mean Reward: ' + lastReward + ' / ' + meanReward,
+                 g_settings.style.textStyle1).setOrigin(0.0);
+        }
+
     }
     
 
@@ -176,7 +203,8 @@ class PlayGame extends Phaser.Scene {
 
 
         // Update vehicle with user control
-        if (this.m_mode == "USER")
+        if (this.m_mode == "USER" ||
+            (this.m_mode == "AI" && g_settings.versus.opponent0 == OPPONENT_USER))
         {
             let action = -1;
             if (this.m_cursors.left.isDown)
@@ -203,6 +231,11 @@ class PlayGame extends Phaser.Scene {
             // Handle reinfoircement learning
             // store reward, action, ...
             this.handleReinforcementLearning(time, true);
+        }
+        else if (this.m_mode == "AI")
+        {
+            // Control with stored model
+            this.controlWithAI(time, true);
         }
 
         // render
@@ -368,100 +401,116 @@ class PlayGame extends Phaser.Scene {
     }
 
 
-    /*
-    controlShipWithAI(ship, time)
+    
+    controlWithAI(time, debug)
     {
-        let newRaycast = this.castRays(ship.gameobject); // [centerRayLengthNormalized, leftRayLengthNormalized, rightRayLengthNormalized, vehicleSpeedFactor];
-        ship.lastRays = newRaycast.slice(0);
-        let predictedCursorX = 0.0;
-        let predictedCursorY = 0.0;
-
-        if (ship.cursorXModel !== null && 
-            ship.cursorYModel !== null )
+        // retrieve model
+        let model = null;
+        if (g_settings.versus.opponent0 == OPPONENT_CURRENT_AI)
         {
-            let vehicleSpeedFactor = (ship.velocity/g_settings.vehicle.maxVelocity);
-            newRaycast.push(vehicleSpeedFactor);
-
-            if (false)
+            if (window.reinforcement_model !== null)
+                model = window.reinforcement_model.m_model;
+            
+            // current model if any
+            if (model === null)
             {
-                const rays = tf.tensor2d(newRaycast, [1, 4]);
-                predictedCursorX = ship.cursorXModel.predict(rays).dataSync()[0];
-                predictedCursorY = ship.cursorYModel.predict(rays).dataSync()[0];
-            }
-            else
-            {
-                tf.tidy(() => {
-                    // tf.tidy will clean up all the GPU memory used by tensors inside
-                    // this function, other than the tensor that is returned.
-
-                    const rays = tf.tensor2d(newRaycast, [1, 4]);
-                    predictedCursorX = ship.cursorXModel.predict(rays).dataSync()[0];
-                    predictedCursorY = ship.cursorYModel.predict(rays).dataSync()[0];
-                });
+                console.log("Error: No current AI !");
             }
         }
-        else
+        else if (g_settings.versus.opponent0 > OPPONENT_CURRENT_AI)
         {
-            console.log("No AI !!!");
-            predictedCursorX = 1.0;
-            predictedCursorY = 1.0;
-        }
-
-        if (predictedCursorY > g_settings.neuralnetwork.predictionThreshold && ship.velocity < g_settings.vehicle.maxVelocity)
-        {
-            // Acceleration
-            ship.velocity += g_settings.vehicle.velocityIncrement;
-        }
-        else if (predictedCursorY < -g_settings.neuralnetwork.predictionThreshold && ship.velocity > -g_settings.vehicle.maxVelocity)
-        {
-            // backward/brake
-            ship.velocity -= g_settings.vehicle.velocityIncrement;
-        }
-        else {
-            ship.velocity *= g_settings.vehicle.velocityAttenuation;
+            // load model from slot
+            model = g_settings.versus.storedModels.opponent0;
+            if (model === null)
+            {
+                console.log("Error: No stored AI !");
+            }
         }
         
-        // NB: PI / 180 = 0.01745
-        ship.gameobject.setVelocity(ship.velocity * Math.cos((ship.gameobject.angle - 90) * 0.01745),
-                                    ship.velocity * Math.sin((ship.gameobject.angle - 90) * 0.01745));
-        
-        if (predictedCursorX < -g_settings.neuralnetwork.predictionThreshold)
-        {
-            ship.gameobject.setAngularVelocity(-g_settings.vehicle.angularVelocity * (ship.velocity/g_settings.vehicle.maxVelocity));
+        if (model === null)
+            return;
 
-            // handle ship turn and wheel traces
-            if (ship.turn != SHIP_TURN_LEFT || ship.turnStart < 0)
+        // Compute current state
+        let newState = this.m_reinforcementEnvironment.getState();
+
+        // predict the action to make
+        //  > compute action probability
+        //  > choose action based on probability
+        let predictedActionSoftmax = tf.tidy(() => {
+            // NB: tf.tidy will clean up all the GPU memory used by tensors inside
+            // this function, other than the tensor that is returned.
+
+            const stateTensor = tf.tensor2d(newState, [1, newState.length]);
+            let prediction = model.predict(stateTensor).dataSync(); 
+            return prediction;
+        });
+        
+        // Compute choice based on action using softmax result as probabilities
+        // let action = window.reinforcement_model.randomChoice(predictedActionSoftmax);
+        let action = predictedActionSoftmax.indexOf(Math.max(...predictedActionSoftmax));
+        this.m_cartPoleInfo.episodeActions.push(action);
+        //if (debug)
+        //    console.log("RL predicted " + action);
+
+        // Apply the action
+        this.applyReinforcementAction(time, action);
+
+        // Compute the state
+        this.m_cartPoleInfo.episodeStates.push(newState);
+
+        // Temporaly push the current reward
+        // this reward will be overwritten by the value computed at the next update()
+        //  (corresponding to the result of the choosen action)
+        this.m_cartPoleInfo.episodeRewards.push(this.m_reinforcementEnvironment.getReward());
+
+        // check if the episode should end
+        if (this.m_reinforcementEnvironment.isDone() || (g_settings.reinforcement.maxSteps > 0 && this.m_cartPoleInfo.episodeUpdateSteps >=  g_settings.reinforcement.maxSteps))
+        {
+            // episode is over
+            if (debug)
+                console.log("Episode over");
+
+            tfvis.render.histogram(this.m_actionSurface, this.m_cartPoleInfo.episodeActions, {});
+                
+            // Store/display stats
+            // compute the episode total reward
+            let episodeRewardsSum = this.sum(this.m_cartPoleInfo.episodeRewards);
+
+            // Add to the list of epidode rewards
+            window.reinforcement_info.allRewards.push(episodeRewardsSum);
+
+            // Compute the mean of all the episode rewards (it should increase)
+            let meanReward = this.mean( window.reinforcement_info.allRewards);
+            let maxReward = this.max( window.reinforcement_info.allRewards);
+
+            if (debug)
             {
-                ship.turn = SHIP_TURN_LEFT;
-                ship.turnStart = time;
+                console.log("======================");
+                console.log("Episode " + window.reinforcement_info.episode);
+                console.log("  episode reward : " + episodeRewardsSum);
+                console.log("  mean reward    : " + meanReward);
+                console.log("  max reward    : " + maxReward);
+                console.log("======================");
             }
 
-            ship.hasWheelTrace = (ship.velocity >= 0.5 * g_settings.vehicle.maxVelocity && (time - ship.turnStart) >= g_settings.vehicle.delayForTraces );
-        }
-        else if (predictedCursorX > g_settings.neuralnetwork.predictionThreshold)
-        {
-            ship.gameobject.setAngularVelocity(g_settings.vehicle.angularVelocity * (ship.velocity/g_settings.vehicle.maxVelocity));
+            // write the score
+            //this.m_scoreText.setText('Episode: ' +  window.reinforcement_info.episode + ' - Last/Mean Reward: ' + episodeRewardsSum + ' / ' + meanReward);
 
-            // handle ship turn and wheel traces
-            if (ship.turn != SHIP_TURN_RIGHT || ship.turnStart < 0)
-            {
-                ship.turn = SHIP_TURN_RIGHT;
-                ship.turnStart = time;
-            }
+            // Add mean reward to visualization
+            this.m_visualizationRewardData.push(
+                { x: 1.0 *  window.reinforcement_info.episode, 
+                  y: meanReward 
+                }
+            );
+            let series = { values : [ this.m_visualizationRewardData] , series : ["MeanRewards"]};
+            tfvis.render.linechart(this.m_visualizationSurface, series, {});
 
-            ship.hasWheelTrace = (ship.velocity >= 0.5 * g_settings.vehicle.maxVelocity && (time - ship.turnStart) >= g_settings.vehicle.delayForTraces );
+            // move to next episode
+            window.reinforcement_info.episode++;
+
+            this.scene.restart({ mode : this.m_mode});
         }
-        else
-        {
-            ship.gameobject.setAngularVelocity(0);
-            ship.turn = SHIP_TURN_NO;
-            ship.turnStart = -1;
-            ship.hasWheelTrace = false;
-        }
-        
     }
-    //*/
-
 
     handleReinforcementLearning(time, debug)
     {
@@ -484,8 +533,9 @@ class PlayGame extends Phaser.Scene {
             // NB: tf.tidy will clean up all the GPU memory used by tensors inside
             // this function, other than the tensor that is returned.
 
-            const stateTensor = tf.tensor2d(newState, [1, newState.length]); // tf.tensor2d(newState, [1, 5]);
-            let prediction = window.reinforcement_model.m_model.predict(stateTensor).dataSync(); // .dataSync()[0];
+            const stateTensor = tf.tensor2d(newState, [1, newState.length]);
+            let prediction = window.reinforcement_model.m_model.predict(stateTensor).dataSync(); 
+            //let prediction = window.reinforcement_model.internalPredict(stateTensor, true).dataSync(); // same result
             return prediction;
         });
         //if (debug)
@@ -541,7 +591,7 @@ class PlayGame extends Phaser.Scene {
                 if (debug)
                     console.log("train after actions " + this.m_cartPoleInfo.episodeActions);
 
-                tfvis.render.histogram(this.m_cartPoleInfo.episodeActions, this.m_actionSurface, {});
+                tfvis.render.histogram(this.m_actionSurface, this.m_cartPoleInfo.episodeActions, {});
                 
                 // train
                 window.reinforcement_model.train(states, actions, discountedRewards, miniBatchSize, debug);
@@ -555,8 +605,8 @@ class PlayGame extends Phaser.Scene {
             window.reinforcement_info.allRewards.push(episodeRewardsSum);
 
             // Compute the mean of all the episode rewards (it should increase)
-            let meanReward = window.reinforcement_model.mean( window.reinforcement_info.allRewards)
-            let maxReward = window.reinforcement_model.max( window.reinforcement_info.allRewards)
+            let meanReward = window.reinforcement_model.mean( window.reinforcement_info.allRewards);
+            let maxReward = window.reinforcement_model.max( window.reinforcement_info.allRewards);
 
             if (debug)
             {
@@ -568,6 +618,9 @@ class PlayGame extends Phaser.Scene {
                 console.log("======================");
             }
 
+            // write the score
+            //this.m_scoreText.setText('Episode: ' +  window.reinforcement_info.episode + ' - Last/Mean Reward: ' + episodeRewardsSum + ' / ' + meanReward);
+
             // Add mean reward to visualization
             this.m_visualizationRewardData.push(
                 { x: 1.0 *  window.reinforcement_info.episode, 
@@ -575,7 +628,7 @@ class PlayGame extends Phaser.Scene {
                 }
             );
             let series = { values : [ this.m_visualizationRewardData] , series : ["MeanRewards"]};
-            tfvis.render.linechart(series, this.m_visualizationSurface, {});
+            tfvis.render.linechart(this.m_visualizationSurface, series, {});
 
             // move to next episode
             window.reinforcement_info.episode++;
@@ -600,6 +653,30 @@ class PlayGame extends Phaser.Scene {
         this.scene.stop();
         this.scene.start('Title');
     }
+
+    // compute the sum
+    sum(values)
+    {
+        let sum = values.reduce(function(a, b) { return a + b; });
+        return sum;
+    }
+
+    max(values)
+    {
+        let max = values.reduce(function(a, b) { return ((a > b)?a : b); });
+        return max;
+    }
+
+    // Compute the mean of the array
+    mean(values)
+    {
+        if (values.length == 0)
+            return 0;
+        let sum = values.reduce(function(a, b) { return a + b; });
+        let average = sum / values.length;
+        return average;
+    }
+
 }
 
 function arraysIdentical(a, b) {
@@ -610,3 +687,4 @@ function arraysIdentical(a, b) {
     }
     return true;
 };
+

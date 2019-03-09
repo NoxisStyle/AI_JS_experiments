@@ -23,8 +23,6 @@ let g_settings =
         }
     },
 
-
-
     reinforcement:{
 
         maxSteps : 1800,
@@ -33,7 +31,19 @@ let g_settings =
         layers : 3,
         units : 10,
         learningRate : 0.01, // 0.005,
-        gammaDiscountRate : 0.95
+        gammaDiscountRate : 0.95,
+
+        slotCount : 10
+    },
+
+    versus:{
+        // -1 = user, 0 = current model, 1 .. 10 : stored slots
+        opponent0 : 0,
+
+        storedModels:
+        {
+            opponent0 : null
+        }
     }
 };
 
@@ -52,7 +62,7 @@ function buildSettings()
     // Add button to close settings overlay
     html += "<button class='close' onclick='saveSettings()'>[X]</button>";
 
-    html += "<h1>Supervised learning method</h1>";
+    html += "<h1>Reinforcement learning method</h1>";
     html += "Max steps per episode:";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.maxSteps' value='" + g_settings.reinforcement.maxSteps + "'/><br/>";
     html += "Mini batch-size:";
@@ -67,6 +77,29 @@ function buildSettings()
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.learningRate' value='" + g_settings.reinforcement.learningRate + "'/><br/>";
     html += "Discount rate (gamma):";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.gammaDiscountRate' value='" + g_settings.reinforcement.gammaDiscountRate + "'/><br/>";
+
+    html += "<br/><br/>";
+    html += "Stored models:<br/>";
+    html += "<div id='reinforcement.storedmodels'></div>";
+    html += "Save current models:<br/>";
+    html += "<i>The models will be stored in the browser indexedDB database. If supported they will also be downloaded (use Chrome for instance).</i><br/>";
+    html += "Slot : <select id='reinforcement.exportModelSlot'>";
+    for (let i = 1; i <= g_settings.reinforcement.slotCount; i++)
+    {
+        html +=  "<option value='" + i + "'>" + i + "</option>";
+    }
+    html +=  "</select>";
+    if (window.reinforcement_model !== null && typeof window.reinforcement_model !== 'undefined')
+    {
+        html += "<button style='position:absolute;right:0px;' id='settings.reinforcement.export' onclick='exportModels()'>Export neural networks</button><br/>";
+    }
+    else
+    {
+        html += "<button style='position:absolute;right:0px;' id='settings.reinforcement.export' disabled >Export neural networks</button><br/>";
+    }
+
+    html += "<h1>Trained model demonstration</h1>";
+    html += "<div id='versus.opponents'></div>";
 
     // display the stored models
     displayModels();
@@ -110,6 +143,8 @@ function saveSettings()
         g_settings.reinforcement.learningRate = getElementValue("settings.reinforcement.learningRate", parseFloat, 0.0, false, 1.0, true);
         g_settings.reinforcement.gammaDiscountRate = getElementValue("settings.reinforcement.gammaDiscountRate", parseFloat, 0.0, true, 1.0, true);
 
+        g_settings.versus.opponent0 = getElementValue("settings.versus.opponent0", parseInt, -1, true, 20, true);
+
         // load the oponenents stored models
         loadUsedSoredModels();
 
@@ -130,20 +165,17 @@ function saveSettings()
 
 async function exportModels()
 {
-    if ( window.ship_cursors_models !== null && typeof  window.ship_cursors_models !== 'undefined'
-        &&  window.ship_cursors_models.length == 2)
+    if (window.reinforcement_model !== null && typeof window.reinforcement_model !== 'undefined'
+        && window.reinforcement_model.m_model !== null)
     {
-        let cursorXModel = window.ship_cursors_models[0].model;
-        let cursorYModel = window.ship_cursors_models[1].model;
-        let slot = document.getElementById("exportModelSlot").value;
+        let policyGradientModel = window.reinforcement_model.m_model;
+        let slot = document.getElementById("reinforcement.exportModelSlot").value;
 
         // save to indexeddb
-        await cursorXModel.save('indexeddb://horizontal_DNN-' + slot);
-        await cursorYModel.save('indexeddb://vertical_DNN-' + slot);
+        await policyGradientModel.save('indexeddb://cartpole_reinforcement_policygradient-' + slot);
 
         // save to file (may not work)
-        await cursorXModel.save('downloads://horizontal_DNN-' + slot);
-        await cursorYModel.save('downloads://vertical_DNN-' + slot);
+        await policyGradientModel.save('downloads://cartpole_reinforcement_policygradient-' + slot);
 
         // Update the displayed models
         displayModels()
@@ -152,7 +184,7 @@ async function exportModels()
 
 async function displayModels()
 {
-    /*
+
     // retrieve all the stored model
     let storedModels = await tf.io.listModels();
     let html = "<ul>";
@@ -161,9 +193,9 @@ async function displayModels()
     // update slot info
     if (storedModels != null)
     {
-        for (let i = 1; i <= g_settings.neuralnetwork.slotCount; i++)
+        for (let i = 1; i <= g_settings.reinforcement.slotCount; i++)
         {
-            let name = "indexeddb://horizontal_DNN-" + i;
+            let name = 'indexeddb://cartpole_reinforcement_policygradient-' + i;
             if (storedModels[name] !== null && typeof storedModels[name] !== 'undefined')
             {
                 // found a model
@@ -179,67 +211,40 @@ async function displayModels()
         }
     }
     html += "</ul>";
-    let storedModelsEl = document.getElementById("neuralnetwork.storedmodels");
+    let storedModelsEl = document.getElementById("reinforcement.storedmodels");
     storedModelsEl.innerHTML = html;
 
     // update opponent selection info
     html = "";
-    html += "Choose the first opponent<br/>";
+    html += "Choose the AI model<br/>";
     html += "Slot : <select id='settings.versus.opponent0'>";
-    html +=  "<option value='-1' " + ((g_settings.versus.opponent0 == -1)?"selected='selected'":"") + ">User</option>";
+    //html +=  "<option value='-1' " + ((g_settings.versus.opponent0 == -1)?"selected='selected'":"") + ">User</option>";
     html +=  "<option value='0' " + ((g_settings.versus.opponent0 == 0)?"selected='selected'":"") + ">Current AI</option>";
     if (storedModels != null)
     {
-        for (let i = 1; i <= g_settings.neuralnetwork.slotCount; i++)
+        for (let i = 1; i <= g_settings.reinforcement.slotCount; i++)
         {
             if (hasStoredModel[i - 1])
                 html +=  "<option value='" + i + "' " + ((g_settings.versus.opponent0 == i)?"selected='selected'":"") + ">Slot " + i + "</option>";
         }
     }
     html +=  "</select><br/>";
-    html += "Choose the second opponent<br/>";
-    html += "Slot : <select id='settings.versus.opponent1'>";
-    html +=  "<option value='0' " + ((g_settings.versus.opponent1 == 0)?"selected='selected'":"") + ">Current AI</option>";
-    if (storedModels != null)
-    {
-        for (let i = 1; i <= g_settings.neuralnetwork.slotCount; i++)
-        {
-            if (hasStoredModel[i - 1])
-                html +=  "<option value='" + i + "' " + ((g_settings.versus.opponent1 == i)?"selected='selected'":"") + ">Slot " + i + "</option>";
-        }
-    }
-    html +=  "</select><br/>";
+
     let opponentsEl = document.getElementById("versus.opponents");
     opponentsEl.innerHTML = html;
-
-    //*/
 }
 
 async function loadUsedSoredModels()
 {
-    /*
+
     if (g_settings.versus.opponent0 > OPPONENT_CURRENT_AI)
     {
-        console.log("Loading models indexeddb://horizontal_DNN-" + g_settings.versus.opponent0);
-        g_settings.versus.storedModels.opponent0_cursorX = await tf.loadModel("indexeddb://horizontal_DNN-" + g_settings.versus.opponent0);
-        g_settings.versus.storedModels.opponent0_cursorY = await tf.loadModel("indexeddb://vertical_DNN-" + g_settings.versus.opponent0);
+        console.log("Loading models indexeddb://cartpole_reinforcement_policygradient-" + g_settings.versus.opponent0);
+        g_settings.versus.storedModels.opponent0 = await tf.loadModel('indexeddb://cartpole_reinforcement_policygradient-' + g_settings.versus.opponent0);
     }
     else
     {
-        g_settings.versus.storedModels.opponent0_cursorX = null;
-        g_settings.versus.storedModels.opponent0_cursorY = null;
+        g_settings.versus.storedModels.opponent0 = null;
     }
 
-    if (g_settings.versus.opponent1 > OPPONENT_CURRENT_AI)
-    {
-        console.log("Loading models indexeddb://horizontal_DNN-" + g_settings.versus.opponent1);
-        g_settings.versus.storedModels.opponent1_cursorX = await tf.loadModel("indexeddb://horizontal_DNN-" + g_settings.versus.opponent1);
-        g_settings.versus.storedModels.opponent1_cursorY = await tf.loadModel("indexeddb://vertical_DNN-" + g_settings.versus.opponent1);
-    }
-    else
-    {
-        g_settings.versus.storedModels.opponent1_cursorX = null;
-        g_settings.versus.storedModels.opponent1_cursorY = null;
-    }
-    //*/
 }

@@ -403,6 +403,9 @@ class PlayGame extends Phaser.Scene {
         this.m_ship.wheelTraces = new WheelTrace(this, 0x000000, 0.2, 2, 2000);
         this.m_ship2.wheelTraces = new WheelTrace(this, 0x000000, 0.2, 2, 2000);
 
+        this.m_ship.m_directionRewardView = new DirectionRewardView(this, 0xFF0000, 0.2, 2, 100, 40);
+        this.m_ship2.m_directionRewardView = new DirectionRewardView(this, 0xFF0000, 0.2, 2, 100, 40);
+
         // Create a category for the vehicles
         if (g_settings.physics.vehiclesCategory < 0)
             g_settings.physics.vehiclesCategory = this.matter.world.nextCategory();
@@ -645,7 +648,8 @@ class PlayGame extends Phaser.Scene {
         this.m_ship2.lastRays = null;
 
         // Update vehicle with user control
-        if (this.m_mode == "USER" || g_settings.versus.opponent0 == OPPONENT_USER)
+        if (this.m_mode == "USER" || 
+            (this.m_mode == "AI" && g_settings.versus.opponent0 == OPPONENT_USER))
         {
             if (this.m_cursors.up.isDown)
             {
@@ -808,6 +812,11 @@ class PlayGame extends Phaser.Scene {
             this.m_lastRaycastTime = time;
         }
 
+        // Draw reward viewers
+        this.m_ship.m_directionRewardView.update(this.m_ship.gameobject.body.position.x, this.m_ship.gameobject.body.position.y);
+        this.m_ship.m_directionRewardView.draw();
+        this.m_ship2.m_directionRewardView.update(this.m_ship2.gameobject.body.position.x, this.m_ship2.gameobject.body.position.y);
+        this.m_ship2.m_directionRewardView.draw();
 
 
         // handle ship wheel traces

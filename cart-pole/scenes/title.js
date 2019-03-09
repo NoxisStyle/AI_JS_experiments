@@ -104,6 +104,7 @@ class Title extends Phaser.Scene {
 
     startAIDemonstration()
     {
+        window.aiModeInitialized = false;
         this.scene.start('PlayGame', {mode : "AI"});
     }
 }
