@@ -6,7 +6,7 @@ This experiment uses Tensorflow.js in order to solve the cartpole problem using 
 The Experiment is rendered using Phaser 3 game engine.
 Tfjs-vis is used for graph visualization.
 
-![Alt text](cartpole_trained.gif?raw=true "trainedmodel")
+![Alt text](data/cartpole_trained.gif?raw=true "trainedmodel")
 
 The Settings page allows to:
 
