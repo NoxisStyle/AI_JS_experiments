@@ -240,7 +240,9 @@ async function loadUsedSoredModels()
     if (g_settings.versus.opponent0 > OPPONENT_CURRENT_AI)
     {
         console.log("Loading models indexeddb://cartpole_reinforcement_policygradient-" + g_settings.versus.opponent0);
-        g_settings.versus.storedModels.opponent0 = await tf.loadModel('indexeddb://cartpole_reinforcement_policygradient-' + g_settings.versus.opponent0);
+        g_settings.versus.storedModels.opponent0 = await tf.loadLayersModel ('indexeddb://cartpole_reinforcement_policygradient-' + g_settings.versus.opponent0);
+
+        console.log("Loaded");
     }
     else
     {
