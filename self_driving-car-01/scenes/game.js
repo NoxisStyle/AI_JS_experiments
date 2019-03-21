@@ -61,6 +61,8 @@ class PlayGame extends Phaser.Scene {
         this.m_visualizationSurface = tfvis.visor().surface({ name: 'Rewards', tab: 'Charts' });
         this.m_actionSurface = tfvis.visor().surface({ name: 'Actions', tab: 'Charts' });
         this.m_visualizationRewardData = [];
+        this.m_scoreText = null;
+        this.m_currentRewardText = null;
         
     }
      
@@ -543,6 +545,23 @@ class PlayGame extends Phaser.Scene {
                                 .setOrigin(1.0)
                                 .setScrollFactor(0));
         
+        if (window.ship_reinforcement_info.episode <= 0)
+            this.m_scoreText = this.add.text(10, 10, 'Episode: 0 - Last/Mean Reward: 0 / 0', g_settings.style.textStyle1)
+                                .setOrigin(0.0)
+                                .setScrollFactor(0);
+        else
+        {
+            let meanReward = this.mean( window.ship_reinforcement_info.allRewards);
+            let lastReward = window.ship_reinforcement_info.allRewards[window.ship_reinforcement_info.allRewards.length - 1];
+
+            this.m_scoreText = this.add.text(10, 10, 'Episode: ' +  window.ship_reinforcement_info.episode + ' - Last/Mean Reward: ' + lastReward + ' / ' + meanReward,
+                 g_settings.style.textStyle1)
+                                .setOrigin(0.0)
+                                .setScrollFactor(0);
+        }
+        this.m_currentRewardText = this.add.text(10, 32, 'Reward: 0', g_settings.style.textStyle1)
+                                .setOrigin(0.0)
+                                .setScrollFactor(0);
 
         // Handle collisions
         this.matter.world.on('collisionstart', function (event) {
@@ -1002,6 +1021,7 @@ class PlayGame extends Phaser.Scene {
         {
             ship.episodeRewards[ship.episodeRewards.length - 1] = ship.rewards;
         }
+        this.m_currentRewardText.setText("Reward:" + ship.rewards);
 
         // build the concat state (from several successive states)
         let newConcatState = null;
@@ -1080,7 +1100,7 @@ class PlayGame extends Phaser.Scene {
                 if (debug)
                     console.log("train after actions " + ship.episodeActions);
 
-                tfvis.render.histogram(ship.episodeActions, this.m_actionSurface, {});
+                tfvis.render.histogram(this.m_actionSurface, ship.episodeActions , {});
                 
                 // train
                 window.ship_reinforcement_model.train(states, actions, discountedRewards, miniBatchSize, debug);
@@ -1114,7 +1134,7 @@ class PlayGame extends Phaser.Scene {
                 }
             );
             let series = { values : [ this.m_visualizationRewardData] , series : ["MeanRewards"]};
-            tfvis.render.linechart(series, this.m_visualizationSurface, {});
+            tfvis.render.linechart(this.m_visualizationSurface, series, {});
 
             // move to next episode
             window.ship_reinforcement_info.episode++;
@@ -1253,6 +1273,30 @@ class PlayGame extends Phaser.Scene {
         this.scene.stop();
         this.scene.start('Title');
     }
+
+    // compute the sum
+    sum(values)
+    {
+        let sum = values.reduce(function(a, b) { return a + b; });
+        return sum;
+    }
+
+    max(values)
+    {
+        let max = values.reduce(function(a, b) { return ((a > b)?a : b); });
+        return max;
+    }
+
+    // Compute the mean of the array
+    mean(values)
+    {
+        if (values.length == 0)
+            return 0;
+        let sum = values.reduce(function(a, b) { return a + b; });
+        let average = sum / values.length;
+        return average;
+    }
+
 }
 
 function arraysIdentical(a, b) {

@@ -6,7 +6,7 @@ let g_settings =
     style :{
         titleStyleH1 : { fontFamily: 'Arial', fontSize: 64, color: '#ffff00' },
         titleStyleH2 : { fontFamily: 'Arial', fontSize: 32, color: '#ffffff' },
-        textStyle1 : { fontFamily: 'Arial', fontSize: 16, color: '#ffffff' },
+        textStyle1 : { fontFamily: 'Arial', fontSize: 16, color: '#808080' },
         buttonStyles: {
             rest : { fontFamily: 'Arial', fontSize: 16, color: '#ffffff'},
             hover : { fontFamily: 'Arial', fontSize: 24, color: '#ffff00'},
@@ -414,8 +414,8 @@ async function loadUsedSoredModels()
     if (g_settings.versus.opponent0 > OPPONENT_CURRENT_AI)
     {
         console.log("Loading models indexeddb://horizontal_DNN-" + g_settings.versus.opponent0);
-        g_settings.versus.storedModels.opponent0_cursorX = await tf.loadModel("indexeddb://horizontal_DNN-" + g_settings.versus.opponent0);
-        g_settings.versus.storedModels.opponent0_cursorY = await tf.loadModel("indexeddb://vertical_DNN-" + g_settings.versus.opponent0);
+        g_settings.versus.storedModels.opponent0_cursorX = await tf.loadLayersModel("indexeddb://horizontal_DNN-" + g_settings.versus.opponent0);
+        g_settings.versus.storedModels.opponent0_cursorY = await tf.loadLayersModel("indexeddb://vertical_DNN-" + g_settings.versus.opponent0);
     }
     else
     {
@@ -426,8 +426,8 @@ async function loadUsedSoredModels()
     if (g_settings.versus.opponent1 > OPPONENT_CURRENT_AI)
     {
         console.log("Loading models indexeddb://horizontal_DNN-" + g_settings.versus.opponent1);
-        g_settings.versus.storedModels.opponent1_cursorX = await tf.loadModel("indexeddb://horizontal_DNN-" + g_settings.versus.opponent1);
-        g_settings.versus.storedModels.opponent1_cursorY = await tf.loadModel("indexeddb://vertical_DNN-" + g_settings.versus.opponent1);
+        g_settings.versus.storedModels.opponent1_cursorX = await tf.loadLayersModel("indexeddb://horizontal_DNN-" + g_settings.versus.opponent1);
+        g_settings.versus.storedModels.opponent1_cursorY = await tf.loadLayersModel("indexeddb://vertical_DNN-" + g_settings.versus.opponent1);
     }
     else
     {

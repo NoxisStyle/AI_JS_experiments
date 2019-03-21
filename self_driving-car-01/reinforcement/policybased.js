@@ -158,7 +158,7 @@ class PolicyBasedAgent
         // Render policy entropy data
         //console.log(this.m_visualizationPolicyData);
         let series = { values : [ this.m_visualizationPolicyData] , series : ["PolicyEntropy"]};
-        tfvis.render.linechart(series, this.m_visualizationSurface, {});
+        tfvis.render.linechart(this.m_visualizationSurface, series, {});
     }
 
 

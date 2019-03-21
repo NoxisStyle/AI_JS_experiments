@@ -1,15 +1,19 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-    <!-- //cdn.jsdelivr.net/npm/phaser@3.0.0/dist/phaser.min.js" -->
-    <script src="//cdn.jsdelivr.net/npm/phaser@3.11.0/dist/phaser.min.js"></script>
+    <!-- //cdn.jsdelivr.net/npm/phaser@3.0.0/dist/phaser.min.js" 
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.12.5"> </script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@1.0.2"></script>
+    -->
+    <script src="//cdn.jsdelivr.net/npm/phaser@3.11.0/dist/phaser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0"> </script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@1.0.2"></script>
     <script src="MatterJS_Raycast/raycast_es6.js"></script>
     <script src="mazegenerator/mazegenerator.js"></script>
     <script src="utils/textbutton.js"></script>
     <script src="utils/progressbar.js"></script>
     <script src="utils/graph.js"></script>
+    <script src="utils/visualization.js"></script>
     <script src="utils/wheeltrace.js"></script>
     <script src="utils/directionrewardview.js"></script>
     <script src="settings/settings.js"></script>
@@ -92,6 +96,10 @@
     </script>
 
     <div id="gameContainer" style="width : 900px; margin: 0 auto;"></div>
+
+    <p style="text-align: center;margin: 20px 0;padding: 10px;" >
+        <a href="javascript:toggleVisor()" >Toggle diagrams</a>
+    </p>
 
     <!-- Settings -->
     <div id="overlay">
