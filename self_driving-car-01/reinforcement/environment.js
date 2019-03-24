@@ -171,6 +171,7 @@ class GameReinforcementLearningEnvironment
         if (debug)
             console.log("Environment collision reward of " + environmentCollisionReward + " (" + ship.collisions.environment + " collisions)");
 
+        /*
         if (ship.gameobject.body.velocity.y < 0)
         {
             ship.rewards += g_settings.reinforcement.goingUpReward;
@@ -189,12 +190,24 @@ class GameReinforcementLearningEnvironment
             if (debug)
                 console.log("Environment not moving reward " + g_settings.reinforcement.notMovingReward);
         }
+        //*/
 
         // Compute distance reward
         let distanceReward = g_settings.reinforcement.distanceReward * Math.pow(distance, g_settings.reinforcement.distanceRewardPower);
         ship.rewards += distanceReward;
         if (debug)
             console.log("Environment distance reward " + distanceReward);
+
+        // Direction reward
+        let angle = ((ship.gameobject.angle - 90) * Math.PI) / 180.0;
+        //console.log(ship.gameobject.angle + " " + angle);
+        let radius = g_settings.reinforcement.goingUpReward;
+        if (angle > Math.PI)
+            radius = g_settings.reinforcement.goingDownReward;    
+        let directionReward = radius * Math.sin(angle);
+        ship.rewards += directionReward;
+        if (debug)
+            console.log("Direction reward " + directionReward);
 
         // Compute rays rewards
         if (ship.lastRays !== null)

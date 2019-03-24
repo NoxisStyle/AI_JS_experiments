@@ -69,7 +69,7 @@ let g_settings =
         distanceReward : 0,
         distanceRewardPower : 0.4,
         raysRewardFactorC : 1.0,
-        raysRewardFactorLR : 1.0, // -0.4,
+        raysRewardFactorLR : -0.4,
 
         repeatSameMazeCount : 5,
         maxSteps : 1800,

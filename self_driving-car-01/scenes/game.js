@@ -29,7 +29,7 @@ class PlayGame extends Phaser.Scene {
 
         this.m_maze = null;
 
-        this.m_debugRewards1 = false;
+        this.m_debugRewards1 = true;
         this.m_debugRewards2 = false;
 
         // Create dataset if required
