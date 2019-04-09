@@ -29,7 +29,7 @@ class PlayGame extends Phaser.Scene {
 
         this.m_maze = null;
 
-        this.m_debugRewards1 = true;
+        this.m_debugRewards1 = false;
         this.m_debugRewards2 = false;
 
         // Create dataset if required
@@ -1068,7 +1068,9 @@ class PlayGame extends Phaser.Scene {
         ship.episodeRewards.push(ship.rewards);
 
         // check if the episode should end
-        if (ship.collisions.endOfZone || (g_settings.reinforcement.maxSteps > 0 && ship.episodeUpdateSteps >=  g_settings.reinforcement.maxSteps))
+        if (ship.collisions.endOfZone ||
+            ship.collisions.environment > 0 ||
+             (g_settings.reinforcement.maxSteps > 0 && ship.episodeUpdateSteps >=  g_settings.reinforcement.maxSteps))
         {
             // episode is over
             if (debug)

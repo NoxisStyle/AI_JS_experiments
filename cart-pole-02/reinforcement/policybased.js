@@ -1,23 +1,3 @@
-/*
-const REINFORCEMENT_ACTION_LEFT         = 0;
-const REINFORCEMENT_ACTION_LEFT_UP      = 1;
-const REINFORCEMENT_ACTION_UP           = 2;
-const REINFORCEMENT_ACTION_RIGHT_UP     = 3;
-const REINFORCEMENT_ACTION_RIGHT        = 4;
-const REINFORCEMENT_ACTION_RIGHT_DOWN   = 5;
-const REINFORCEMENT_ACTION_DOWN         = 6;
-const REINFORCEMENT_ACTION_LEFT_DOWN    = 7;
-//*/
-
-const REINFORCEMENT_ACTION_LEFT_UP      = 0;
-const REINFORCEMENT_ACTION_UP           = 1;
-const REINFORCEMENT_ACTION_RIGHT_UP     = 2;
-const REINFORCEMENT_ACTION_DOWN         = 3;
-// deactivated actions
-const REINFORCEMENT_ACTION_LEFT         = 100;
-const REINFORCEMENT_ACTION_RIGHT        = 100;
-const REINFORCEMENT_ACTION_RIGHT_DOWN   = 100;
-const REINFORCEMENT_ACTION_LEFT_DOWN    = 100;
 
 
 class PolicyBasedAgent
@@ -25,24 +5,32 @@ class PolicyBasedAgent
     constructor()
     {
         console.log("Init PolicyBasedAgent");
-        this.m_inputCount = 5 * 2; // 2 concat states of 5 elts
-        this.m_actionCount = 4;
+        this.m_inputCount = 4;
+        this.m_actionCount = 2;
         this.m_layers = [];
         this.softmaxLayer = null;
         this.m_policyOptimizer = tf.train.adam(g_settings.reinforcement.learningRate);
 
+        // policy model
         this.m_model = this.createPolicyNeuralNetwork(this.m_inputCount, 
                                                         g_settings.reinforcement.units, 
                                                         g_settings.reinforcement.layers,
                                                         this.m_actionCount);
-
+        
+        this.m_valueModel = this.createValueModel(this.m_inputCount,
+                                                        g_settings.valuemodel.units,
+                                                        g_settings.valuemodel.layers);
         // Get a surface
         this.m_visualizationSurface = tfvis.visor().surface({ name: 'PolicyEntropy', tab: 'Charts' });
         this.m_visualizationPolicyData = [];
         this.m_visualizationPolicyIndex = 0;
+
+        this.m_visualizationSurfaceValueModel = tfvis.visor().surface({ name: 'Value Model loss', tab: 'Charts' });
+        this.m_visualizationValueModelLossData = [];
+        this.m_visualizationValueModelLossIndex = 0;
     }
 
-    discountAndNormalizeRewards(rewards)
+    discountAndNormalizeRewards(rewards, normalize, debug)
     {
         let discountedRewards = [];
         let size = rewards.length;
@@ -57,18 +45,24 @@ class PolicyBasedAgent
         discountedRewards = discountedRewards.reverse();
 
         // normalize
-        let mean = this.mean(discountedRewards);
-        //console.log("mean " + mean);
-        let std = this.std(discountedRewards) + 1e-10;
-        //console.log("std " + std);
-        discountedRewards = discountedRewards.map(function(value) {
-            return (value - mean) / std;
-        });
-        //console.log("disc rw " + discountedRewards);
+        if (normalize)
+        {
+            let mean = VectorUtils.mean(discountedRewards);
+            //console.log("mean " + mean);
+            let std = VectorUtils.std(discountedRewards) + 1e-10;
+            //console.log("std " + std);
+            discountedRewards = discountedRewards.map(function(value) {
+                return (value - mean) / std;
+            });
+        }
+
+        if (debug)
+            console.log("disc rw " + discountedRewards);
 
         return discountedRewards;
     }
 
+    // Policy model: state to action
     createPolicyNeuralNetwork(inputCount, unitCount, layerCount, actionCount)
     {
         let model = tf.sequential();
@@ -121,6 +115,38 @@ class PolicyBasedAgent
         return model;
     }
 
+    // Value model : state to average reward (baseline) 
+    createValueModel(inputCount, unitCount, layerCount)
+    {
+        let model = tf.sequential();
+        let valueOptimizer = tf.train.adam(g_settings.valuemodel.learningRate);
+
+        // Add dense layers
+        for (let i = 0; i < layerCount; i++)
+        {
+            let inputShapeInfo = (i == 0)? inputCount : unitCount;
+            let layerCfg = {
+                units: (i < layerCount - 1) ? unitCount : 1, 
+                inputShape: [inputShapeInfo],
+                kernelInitializer: 'glorotUniform'
+            }
+
+            // activation function except for the last layer
+            if (i < layerCount - 1)
+            {
+                layerCfg.activation = 'relu';
+            }
+
+            let layer = tf.layers.dense(layerCfg);
+
+            model.add(layer);
+        }
+
+        model.compile({loss: 'meanSquaredError', optimizer: valueOptimizer});
+
+        return model;
+    }
+
     train(states, actions, discountedRewards, miniBatchSize, debug)
     {
         const datasetSize = states.shape[0];
@@ -136,6 +162,11 @@ class PolicyBasedAgent
                 const actionsSlice = actions.slice(start, end);
                 const discountedRewardsSlice = discountedRewards.slice(start, end);
 
+                //if (debug)
+                //{
+                //    console.log("About to handle \n\t" + statesSlice + "\n\t" + actionsSlice + "\n\t" + discountedRewardsSlice);
+                //}
+
                 // use the internal loss function to provide the loss to minimize
                 // In fact this is the policy score function to maximize
                 this.m_policyOptimizer.minimize(() => {
@@ -146,7 +177,8 @@ class PolicyBasedAgent
 
                         if (debug)
                         {
-                            let policyEntropy = this.internalPolicyEntropy(statesSlice).dataSync()[0];
+                            let policyEntropyTensor = this.internalPolicyEntropy(statesSlice);
+                            let policyEntropy = policyEntropyTensor.dataSync()[0];
                             console.log("Epoch " + epoch + " - policy entropy = " + policyEntropy);
 
                             this.m_visualizationPolicyData.push(
@@ -154,8 +186,9 @@ class PolicyBasedAgent
                                 y: policyEntropy 
                                 }
                             );
-
+                            policyEntropyTensor.dispose();
                         }
+                        predictionWithoutSoftmax.dispose();
 
                         return loss;
                     });
@@ -174,6 +207,24 @@ class PolicyBasedAgent
         tfvis.render.linechart(this.m_visualizationSurface, series, {});
     }
 
+    async trainValueModel(states, discountedRewards, miniBatchSize)
+    {
+        const history = await this.m_valueModel.fit(
+            states, discountedRewards, {
+            batchSize: miniBatchSize,
+            epochs: g_settings.valuemodel.epochs
+        });
+
+        // render loss
+        let loss = history.history.loss[0];
+        this.m_visualizationValueModelLossData.push(
+            { x: 1.0 * this.m_visualizationValueModelLossIndex++, 
+            y: loss 
+            }
+        );
+        let series = { values : [ this.m_visualizationValueModelLossData] , series : ["Value Model loss"]};
+        tfvis.render.linechart(this.m_visualizationSurfaceValueModel, series, {});
+    }
 
     // Internal function defining the Loss function
     // This is in fact the Policy score function to maximize
@@ -267,55 +318,4 @@ class PolicyBasedAgent
         return entropy;
     }
 
-    
-
-    // function to make a random choice
-    // equivalent of numpy.random.choice()
-    // The probabilities associated with each entry in p
-    randomChoice(p) 
-    {
-        let rnd = p.reduce( (a, b) => a + b ) * Math.random();
-        return p.findIndex( a => (rnd -= a) < 0 );
-    }
-
-    // compute the sum
-    sum(values)
-    {
-        let sum = values.reduce(function(a, b) { return a + b; });
-        return sum;
-    }
-
-    max(values)
-    {
-        let max = values.reduce(function(a, b) { return ((a > b)?a : b); });
-        return max;
-    }
-
-    // Compute the mean of the array
-    mean(values)
-    {
-        if (values.length == 0)
-            return 0;
-        let sum = values.reduce(function(a, b) { return a + b; });
-        let average = sum / values.length;
-        return average;
-    }
-
-    // compute the standard deviation
-    std(values)
-    {
-        let avg = this.mean(values);
-        
-        let squareDiffs = values.map(function(value){
-            let diff = value - avg;
-            return (diff * diff);
-        });
-        
-        let avgSquareDiff = this.mean(squareDiffs);
-        
-        let stdDev = Math.sqrt(avgSquareDiff);
-        return stdDev;
-    }
-      
-    
 }

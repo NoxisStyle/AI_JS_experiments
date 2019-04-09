@@ -31,9 +31,9 @@ class DirectionRewardView
         {
             let angle = (i * 2 * Math.PI ) / this.m_sections;
             
-            let radius = g_settings.reinforcement.goingUpReward;
+            let radius = g_settings.reinforcement.angleUpReward;
             if (angle > Math.PI)
-                radius = g_settings.reinforcement.goingDownReward;
+                radius = g_settings.reinforcement.angleDownReward;
             
             let rewardRadius = this.m_defaultRadius * radius * Math.sin(angle);
 

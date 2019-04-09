@@ -64,12 +64,14 @@ let g_settings =
         environmentCollisionReward : -10,
         endZoneCollisionReward : 100,
         notMovingReward : -2,
-        goingDownReward : 0,
-        goingUpReward : 1,
+        goingDownReward : -1,
+        goingUpReward : 0,
+        angleDownReward : -0.5,
+        angleUpReward : 1,
         distanceReward : 0,
         distanceRewardPower : 0.4,
         raysRewardFactorC : 1.0,
-        raysRewardFactorLR : -0.4,
+        raysRewardFactorLR : 0, //-0.4,
 
         repeatSameMazeCount : 5,
         maxSteps : 1800,
@@ -193,11 +195,15 @@ function buildSettings()
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.endZoneCollisionReward' value='" + g_settings.reinforcement.endZoneCollisionReward + "'/><br/>";
     html += "Not moving reward:";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.notMovingReward' value='" + g_settings.reinforcement.notMovingReward + "'/><br/>";
-    html += "Going down reward:";
+    html += "Going down reward (velocity):";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.goingDownReward' value='" + g_settings.reinforcement.goingDownReward + "'/><br/>";
-    html += "Going up reward:";
+    html += "Going up reward (velocity):";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.goingUpReward' value='" + g_settings.reinforcement.goingUpReward + "'/><br/>";
-  
+    html += "Angle pointing down reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.angleDownReward' value='" + g_settings.reinforcement.angleDownReward + "'/><br/>";
+    html += "Angle pointing up reward:";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.angleUpReward' value='" + g_settings.reinforcement.angleUpReward + "'/><br/>";
+
     html += "<p><i>The distance reward will be distanceReward * (distance ^ distanceRewardpower) <br/>Where distance is normalized and belongs to [0 1].</i></p><br/>";
     html += "Distance reward:";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.distanceReward' value='" + g_settings.reinforcement.distanceReward + "'/><br/>";
@@ -290,6 +296,8 @@ function saveSettings()
         g_settings.reinforcement.notMovingReward = getElementValue("settings.reinforcement.notMovingReward", parseInt,  -1000, true, 1000, true);
         g_settings.reinforcement.goingDownReward = getElementValue("settings.reinforcement.goingDownReward", parseInt, -1000, true, 1000, true);
         g_settings.reinforcement.goingUpReward = getElementValue("settings.reinforcement.goingUpReward", parseInt, -1000, true, 1000, true);
+        g_settings.reinforcement.angleDownReward = getElementValue("settings.reinforcement.angleDownReward", parseInt, -1000, true, 1000, true);
+        g_settings.reinforcement.angleUpReward = getElementValue("settings.reinforcement.angleUpReward", parseInt, -1000, true, 1000, true);
 
         g_settings.reinforcement.distanceReward = getElementValue("settings.reinforcement.distanceReward", parseInt, -1000, true, 1000, true);
         g_settings.reinforcement.distanceRewardPower = getElementValue("settings.reinforcement.distanceRewardPower", parseFloat, 0, false, 10, true);

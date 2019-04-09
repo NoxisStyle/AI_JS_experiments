@@ -158,9 +158,11 @@ class GameReinforcementLearningEnvironment
             console.log('dist factor ' + distance);
 
         // Compute end of zone reward
+        let endOfZoneReward = 0.0;
         if (ship.collisions.endOfZone)
         {
-            ship.rewards += g_settings.reinforcement.endZoneCollisionReward;
+            endOfZoneReward = g_settings.reinforcement.endZoneCollisionReward;
+            ship.rewards += endOfZoneReward;
             if (debug)
                 console.log("EOZ reward of " + g_settings.reinforcement.endZoneCollisionReward);
         }
@@ -171,7 +173,6 @@ class GameReinforcementLearningEnvironment
         if (debug)
             console.log("Environment collision reward of " + environmentCollisionReward + " (" + ship.collisions.environment + " collisions)");
 
-        /*
         if (ship.gameobject.body.velocity.y < 0)
         {
             ship.rewards += g_settings.reinforcement.goingUpReward;
@@ -190,7 +191,6 @@ class GameReinforcementLearningEnvironment
             if (debug)
                 console.log("Environment not moving reward " + g_settings.reinforcement.notMovingReward);
         }
-        //*/
 
         // Compute distance reward
         let distanceReward = g_settings.reinforcement.distanceReward * Math.pow(distance, g_settings.reinforcement.distanceRewardPower);
@@ -199,25 +199,29 @@ class GameReinforcementLearningEnvironment
             console.log("Environment distance reward " + distanceReward);
 
         // Direction reward
-        let angle = ((ship.gameobject.angle - 90) * Math.PI) / 180.0;
+        let angle = ((90 - ship.gameobject.angle ) * Math.PI) / 180.0; // nb: angle from gaeobject in phaser coordiante system modified to match unity circle angles
         //console.log(ship.gameobject.angle + " " + angle);
-        let radius = g_settings.reinforcement.goingUpReward;
+        let radius = g_settings.reinforcement.angleUpReward;
         if (angle > Math.PI)
-            radius = g_settings.reinforcement.goingDownReward;    
+            radius = g_settings.reinforcement.angleDownReward;    
         let directionReward = radius * Math.sin(angle);
-        ship.rewards += directionReward;
+        //ship.rewards += directionReward;
         if (debug)
             console.log("Direction reward " + directionReward);
+        //console.log("RW " + (90 - ship.gameobject.angle) + " " + angle + "  " + directionReward);
 
         // Compute rays rewards
+        let raysReward = 1.0;
         if (ship.lastRays !== null)
         {
-            let raysReward = g_settings.reinforcement.raysRewardFactorC * ship.lastRays[0]
+            raysReward = g_settings.reinforcement.raysRewardFactorC * ship.lastRays[0]
                                 + g_settings.reinforcement.raysRewardFactorLR * (ship.lastRays[1] + ship.lastRays[2]);
-            ship.rewards += raysReward;
+            //ship.rewards += raysReward;
             if (debug)
                 console.log("rays reward " + raysReward);
         }
+
+        ship.rewards += directionReward * raysReward;
 
         if (debug)
             console.log("### Total rewards " + ship.rewards);
