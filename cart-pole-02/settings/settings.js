@@ -23,6 +23,12 @@ let g_settings =
         }
     },
 
+    agent:
+    {
+        algorithm : "REINFORCE", // REINFORCE REINFORCE_BASELINE A2C
+        nSteps : 5
+    },
+
     valuemodel:{
         epochs : 1,
         layers : 5,
@@ -40,6 +46,8 @@ let g_settings =
         units : 10,
         learningRate : 0.01, // 0.005,
         gammaDiscountRate : 0.95,
+
+        normalizeAdvantage : true,
 
         slotCount : 10
     },
@@ -70,6 +78,21 @@ function buildSettings()
     // Add button to close settings overlay
     html += "<button class='close' onclick='saveSettings()'>[X]</button>";
 
+    // Agent
+    html += "<h1>Agent</h1>";
+    html += "Algorithm:";
+    html += "<select style='position:absolute;right:0px;' id='settings.agent.algorithm'>";
+    html +=  "<option value='REINFORCE'  " + ((g_settings.agent.algorithm === "REINFORCE")?"selected='selected'":"") + ">REINFORCE</option>";
+    html +=  "<option value='REINFORCE_BASELINE' " + ((g_settings.agent.algorithm === "REINFORCE_BASELINE")?"selected='selected'":"") + ">REINFORCE with Value Model</option>";
+    html +=  "<option value='A2C' " + ((g_settings.agent.algorithm === "A2C")?"selected='selected'":"") + ">A2C (Advantage Actor Critic)</option>";
+    html +=  "</select><br/>";
+    html += "Algorithm n-steps (e.g. for A2C):";
+    html += "<input type='text' style='position:absolute;right:0px;' id='settings.agent.nSteps' value='" + g_settings.agent.nSteps + "'/><br/>";
+    html += "<br/><br/>";
+
+    
+
+    // Policy model
     html += "<h1>Policy Reinforcement model</h1>";
     html += "Max steps per episode:";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.maxSteps' value='" + g_settings.reinforcement.maxSteps + "'/><br/>";
@@ -85,6 +108,10 @@ function buildSettings()
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.learningRate' value='" + g_settings.reinforcement.learningRate + "'/><br/>";
     html += "Discount rate (gamma):";
     html += "<input type='text' style='position:absolute;right:0px;' id='settings.reinforcement.gammaDiscountRate' value='" + g_settings.reinforcement.gammaDiscountRate + "'/><br/>";
+    html += "Normalize advantage:";
+    let checkedStr = g_settings.reinforcement.normalizeAdvantage ? "checked" : "";
+    html += "<input type='checkbox' style='position:absolute;right:0px;' id='settings.reinforcement.normalizeAdvantage' " + checkedStr + "/><br/>";
+    
 
     // Value model
     html += "<br/><br/>";
@@ -157,6 +184,8 @@ function saveSettings()
 
     try
     {
+        g_settings.agent.algorithm = document.getElementById("settings.agent.algorithm").value;
+        g_settings.agent.nSteps = getElementValue("settings.agent.nSteps", parseInt, 1, true, 65535, true);
 
         g_settings.reinforcement.maxSteps = getElementValue("settings.reinforcement.maxSteps", parseInt, 1, true, 65535, true);
         g_settings.reinforcement.miniBatchSize = getElementValue("settings.reinforcement.miniBatchSize", parseInt, 1, true, 65535, true);
@@ -165,6 +194,8 @@ function saveSettings()
         g_settings.reinforcement.units = getElementValue("settings.reinforcement.units", parseInt, 1, true, 65535, true);
         g_settings.reinforcement.learningRate = getElementValue("settings.reinforcement.learningRate", parseFloat, 0.0, false, 1.0, true);
         g_settings.reinforcement.gammaDiscountRate = getElementValue("settings.reinforcement.gammaDiscountRate", parseFloat, 0.0, true, 1.0, true);
+        g_settings.reinforcement.normalizeAdvantage = document.getElementById("settings.reinforcement.normalizeAdvantage").checked;
+
 
         g_settings.valuemodel.epochs = getElementValue("settings.valuemodel.epochs", parseInt, 1, true, 65535, true);
         g_settings.valuemodel.layers = getElementValue("settings.valuemodel.layers", parseInt, 1, true, 65535, true);

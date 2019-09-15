@@ -1,31 +1,4 @@
-class CartPoleInfo
-{
-    constructor() 
-    {
-        this.episodeUpdateSteps = 0;
-        this.episodeRewards = [];
-        this.episodeActions = [];
-        this.episodeStates = [];
-        this.episodeStateValues = [];
-        //this.episodeConcatStates = [];
-        this.discountedEpisodeRewards = [];
-        this.episodeAdvantages = [];
 
-
-    }
-
-    reset()
-    {
-        this.episodeUpdateSteps = 0;
-        this.episodeRewards = [];
-        this.episodeActions = [];
-        this.episodeStates = [];
-        this.episodeStateValues = [];
-        //this.episodeConcatStates = [];
-        this.discountedEpisodeRewards = [];
-        this.episodeAdvantages = [];
-    }
-}
 
 class PlayGame extends Phaser.Scene {
 
@@ -50,16 +23,21 @@ class PlayGame extends Phaser.Scene {
         window.reinforcement_info = 
         {
             episode : 0,        // current episode
-            allRewards : []     // list of rewards of all episodes
+            allRewards : [],     // list of rewards of all episodes
+            tmpNStepReward : 0
         };
 
         this.m_visualizationSurface = tfvis.visor().surface({ name: 'Rewards', tab: 'Charts' });
         this.m_actionSurface = tfvis.visor().surface({ name: 'Actions', tab: 'Charts' });
         this.m_visualizationRewardData = [];
 
-        this.m_cartPoleInfo = new CartPoleInfo();
+        this.m_cartPoleInfo = new EpisodeInfo();
 
         this.m_scoreText = null;
+
+        this.m_debugMemory = false;
+
+        this.m_waitRestart = false;
         
     }
      
@@ -106,6 +84,8 @@ class PlayGame extends Phaser.Scene {
         console.log(tf.memory());
 
         // create reinforcement learning model if required
+        window.reinforcement_info.tmpNStepReward = 0;
+        let reinforcementModelJustCreated = false;
         if (this.m_mode == "RL_TRAIN" && (window.reinforcement_model === null || typeof window.reinforcement_model === 'undefined'))
         {
             window.reinforcement_model = new PolicyBasedAgent();
@@ -113,6 +93,7 @@ class PlayGame extends Phaser.Scene {
             window.reinforcement_info.allRewards = [];
             window.aiModeInitialized = false;
             this.m_visualizationRewardData = [];
+            reinforcementModelJustCreated = true;
         }
         else if (this.m_mode == "AI" && window.aiModeInitialized == false)
         {
@@ -126,11 +107,20 @@ class PlayGame extends Phaser.Scene {
             window.aiModeInitialized = false;
         }
 
+        // reset restart variable
+        this.m_waitRestart = false;
+
         // Create the environment
 
         // Create reinforcement learning environment
         this.m_reinforcementEnvironment = new CartPoleEnvironment();
-        this.m_cartPoleInfo.reset();
+
+        // reset episode info
+        // In Actor Critic n-step we should not reset everything as
+        // we may not have a complete n-step
+        let resetingDuringNStep = (window.reinforcement_model !== null && window.reinforcement_model.hasNSteps() && !reinforcementModelJustCreated);
+        this.m_cartPoleInfo.reset(resetingDuringNStep);
+        
 
         let world_width = this.m_reinforcementEnvironment.getWorldWidth();
         let scale = game.config.width / world_width;
@@ -199,6 +189,9 @@ class PlayGame extends Phaser.Scene {
 
     update(time, delta)
     {
+        if (this.m_waitRestart)
+            return;
+
         // Apply the controls to the camera each update tick of the game
         if (this.m_controls !== null)
             this.m_controls.update(delta);
@@ -529,22 +522,55 @@ class PlayGame extends Phaser.Scene {
         //{
         //    this.m_cartPoleInfo.episodeRewards[this.m_cartPoleInfo.episodeRewards.length - 1] = this.m_reinforcementEnvironment.getReward();
         //}
-
-        console.log("before value model predict");
-        console.log(tf.memory());
         
         // predict reward with Value model
-        let predictedValueReward = tf.tidy(() => {
+        if (window.reinforcement_model.hasValueModel())
+        {
+            this.logMemory("before value model predict");
 
-            const stateTensor = tf.tensor2d(newState, [1, newState.length]);
-            let prediction = window.reinforcement_model.m_valueModel.predict(stateTensor).dataSync(); 
-            //let prediction = window.reinforcement_model.internalPredict(stateTensor, true).dataSync(); // same result
-            return prediction;
-        });
-        this.m_cartPoleInfo.episodeStateValues.push(predictedValueReward);
+            let predictedValueReward = tf.tidy(() => {
 
-        console.log("before policy model predict");
-        console.log(tf.memory());
+                const stateTensor = tf.tensor2d(newState, [1, newState.length]);
+                let prediction = window.reinforcement_model.m_valueModel.predict(stateTensor).dataSync(); 
+                //let prediction = window.reinforcement_model.internalPredict(stateTensor, true).dataSync(); // same result
+                return prediction;
+            });
+            this.m_cartPoleInfo.episodeStateValues.push(predictedValueReward);
+        }
+
+        // Check if algorithm works on n-steps (e.g. A2C)
+        if (window.reinforcement_model.hasNSteps())
+        {
+            if (this.m_cartPoleInfo.isEndOfNStep())
+            {
+                console.log("###### n-step " + this.m_cartPoleInfo.episodeNStep + " step=" + this.m_cartPoleInfo.episodeUpdateSteps);
+                this.logMemory("before train (n-step)");
+
+                // End the line
+                // NB: All the info will be cleared for the next n-steps (the same state will be retrieved again)
+                this.m_cartPoleInfo.episodeActions.push(0);         // fake action
+                this.m_cartPoleInfo.episodeStates.push(newState);   // new state
+                this.m_cartPoleInfo.episodeRewards.push(0);         // fake reward
+                this.m_cartPoleInfo.episodeDones.push(0.0);           // fake done
+                //this.m_cartPoleInfo.episodeStateValues            // Already pushed
+
+                // Train the value and policy models
+                this.m_waitRestart = true;
+                window.reinforcement_model.trainModels(this.m_cartPoleInfo, false, debug)
+                .then(
+                    onTrainingNStepOverCallback.bind( { game : this, debug : debug})
+                );
+
+                // leave function now
+                return;
+            }
+            else
+            {
+                console.log(">>>> step " + this.m_cartPoleInfo.episodeUpdateSteps);
+            }
+        }
+
+        this.logMemory("before policy model predict");
 
         // predict the action to make with Policy model
         //  > compute action probability
@@ -561,8 +587,7 @@ class PlayGame extends Phaser.Scene {
         //if (debug)
         //    console.log("RL predicted softmax" + predictedActionSoftmax);
 
-        console.log("after policy model predict");
-        console.log(tf.memory());
+        this.logMemory("after policy model predict");
 
         // Compute choice based on action using softmax result as probabilities
         let action = VectorUtils.randomChoice(predictedActionSoftmax);
@@ -576,131 +601,41 @@ class PlayGame extends Phaser.Scene {
         // Compute the state
         this.m_cartPoleInfo.episodeStates.push(newState);
 
-        // Temporaly push the current reward
-        // this reward will be overwritten by the value computed at the next update()
-        //  (corresponding to the result of the choosen action)
+        // Push the current reward
         this.m_cartPoleInfo.episodeRewards.push(this.m_reinforcementEnvironment.getReward());
 
+        // Push done state
+        let episodeDone = (this.m_reinforcementEnvironment.isDone() ||
+                            (g_settings.reinforcement.maxSteps > 0 && this.m_cartPoleInfo.episodeUpdateSteps >=  g_settings.reinforcement.maxSteps));
+        this.m_cartPoleInfo.episodeDones.push((episodeDone ? 1.0 : 0.0));
+
         // check if the episode should end
-        if (this.m_reinforcementEnvironment.isDone() || (g_settings.reinforcement.maxSteps > 0 && this.m_cartPoleInfo.episodeUpdateSteps >=  g_settings.reinforcement.maxSteps))
+        if (episodeDone)
         {
             // episode is over
             if (debug)
                 console.log("Episode over -- about to learn");
 
-            //if (debug)
-            //    console.log("episode rewards " + ship.episodeRewards);
+            this.logMemory("before train");
 
-            // compute discounted episode rewards
-            this.m_cartPoleInfo.discountedEpisodeRewards = window.reinforcement_model.discountAndNormalizeRewards(
-                this.m_cartPoleInfo.episodeRewards,
-                false, // normalize
-                true); // debug
-            
-            if (debug)
-                console.log("predicted disc rw " + this.m_cartPoleInfo.episodeStateValues);
-            
-            // Compute advantages with discounted rewards - value model predictions (baseline)
-            this.m_cartPoleInfo.episodeAdvantages = [];
-            for (let i = 0; i < this.m_cartPoleInfo.discountedEpisodeRewards.length; i++)
+            if (window.reinforcement_model.hasNSteps())
             {
-                this.m_cartPoleInfo.episodeAdvantages.push(this.m_cartPoleInfo.discountedEpisodeRewards[i] - this.m_cartPoleInfo.episodeStateValues[i]);
+                // if the algorithm works on n-steps (e.g. A2C) we do not train the models yet.
+                // We only restart the game
+                this.m_waitRestart = true;
+                this.onTrainingOver(debug);
+            }
+            else
+            {
+                // Train the value and policy models
+                this.m_waitRestart = true;
+                window.reinforcement_model.trainModels(this.m_cartPoleInfo, true, debug)
+                .then(
+                    onTrainingOverCallback.bind( { game : this, debug : debug})
+                );
             }
 
-            if (debug)
-                console.log("adv " + this.m_cartPoleInfo.episodeAdvantages);
-            
-            //if (debug)
-            //    console.log("discounted rewards " + ship.discountedEpisodeRewards);
 
-            console.log("before train");
-            console.log(tf.memory());
-            // train neural network
-            tf.tidy(() => {
-                // NB: tf.tidy will clean up all the GPU memory used by tensors inside
-                // this function, other than the tensor that is returned.
-    
-                //if (debug)
-                //    console.log("build tensors");
-
-
-
-                let miniBatchSize = g_settings.reinforcement.miniBatchSize;
-                if (miniBatchSize > this.m_cartPoleInfo.episodeStates.length)
-                    miniBatchSize = this.m_cartPoleInfo.episodeStates.length;
-            
-                let miniBatchSizeVM = g_settings.valuemodel.miniBatchSize;
-                if (miniBatchSizeVM > this.m_cartPoleInfo.episodeStates.length)
-                    miniBatchSizeVM = this.m_cartPoleInfo.episodeStates.length;
-
-                let states = tf.tensor2d(this.m_cartPoleInfo.episodeStates, [this.m_cartPoleInfo.episodeStates.length, this.m_cartPoleInfo.episodeStates[0].length]);
-                let actions = tf.tensor1d(this.m_cartPoleInfo.episodeActions, 'int32');
-                let discountedRewards = tf.tensor1d(this.m_cartPoleInfo.discountedEpisodeRewards);
-                let advantages = tf.tensor1d(this.m_cartPoleInfo.episodeAdvantages);
-                
-                console.log("train A");
-                console.log(tf.memory());
-
-                if (debug)
-                    console.log("train after actions " + this.m_cartPoleInfo.episodeActions);
-
-                tfvis.render.histogram(this.m_actionSurface, this.m_cartPoleInfo.episodeActions, {});
-                
-
-                // train value model
-                window.reinforcement_model.trainValueModel(states, discountedRewards, miniBatchSizeVM);
-
-                console.log("train B");
-                console.log(tf.memory());
-                
-                // train policy model with advantages
-                window.reinforcement_model.train(states, actions, advantages, miniBatchSize, debug);
-
-                console.log("train C");
-                console.log(tf.memory());
-                
-            });
-            console.log("after train");
-            console.log(tf.memory());
-
-
-            // Store/display stats
-            // compute the episode total reward
-            let episodeRewardsSum = VectorUtils.sum(this.m_cartPoleInfo.episodeRewards);
-
-            // Add to the list of epidode rewards
-            window.reinforcement_info.allRewards.push(episodeRewardsSum);
-
-            // Compute the mean of all the episode rewards (it should increase)
-            let meanReward = VectorUtils.mean( window.reinforcement_info.allRewards);
-            let maxReward = VectorUtils.max( window.reinforcement_info.allRewards);
-
-            if (debug)
-            {
-                console.log("======================");
-                console.log("Episode " + window.reinforcement_info.episode);
-                console.log("  episode reward : " + episodeRewardsSum);
-                console.log("  mean reward    : " + meanReward);
-                console.log("  max reward    : " + maxReward);
-                console.log("======================");
-            }
-
-            // write the score
-            //this.m_scoreText.setText('Episode: ' +  window.reinforcement_info.episode + ' - Last/Mean Reward: ' + episodeRewardsSum + ' / ' + meanReward);
-
-            // Add mean reward to visualization
-            this.m_visualizationRewardData.push(
-                { x: 1.0 *  window.reinforcement_info.episode, 
-                  y: meanReward 
-                }
-            );
-            let series = { values : [ this.m_visualizationRewardData] , series : ["MeanRewards"]};
-            tfvis.render.linechart(this.m_visualizationSurface, series, {});
-
-            // move to next episode
-            window.reinforcement_info.episode++;
-
-            this.scene.restart({ mode : this.m_mode});
         }
 
     }
@@ -709,16 +644,99 @@ class PlayGame extends Phaser.Scene {
     {
         // Update environment
         this.m_reinforcementEnvironment.step(action);
-        this.m_cartPoleInfo.episodeUpdateSteps++;
+        this.m_cartPoleInfo.onStep();
     }
 
-    //*/
+    logMemory(msg)
+    {
+        if (this.m_debugMemory)
+        {
+            console.log(msg);
+            console.log(tf.memory());
+        }
+    }
 
     endGame()
     {
         // return to title screen
         this.scene.stop();
         this.scene.start('Title');
+    }
+
+    onTrainingOver(debug)
+    {
+        // Display histogram with chosen actions
+        tfvis.render.histogram(this.m_actionSurface, this.m_cartPoleInfo.episodeActions, {});
+
+        this.logMemory("after train");
+
+        // Store/display stats
+        // compute the episode total reward
+        let episodeRewardsSum = VectorUtils.sum(this.m_cartPoleInfo.episodeRewards) 
+                                + window.reinforcement_info.tmpNStepReward;
+
+        // Add to the list of epidode rewards
+        window.reinforcement_info.allRewards.push(episodeRewardsSum);
+
+        // Compute the mean of all the episode rewards (it should increase)
+        let meanReward = VectorUtils.mean( window.reinforcement_info.allRewards);
+        let maxReward = VectorUtils.max( window.reinforcement_info.allRewards);
+
+        if (debug)
+        {
+            console.log("======================");
+            console.log("Episode " + window.reinforcement_info.episode);
+            console.log("  episode reward : " + episodeRewardsSum);
+            console.log("  mean reward    : " + meanReward);
+            console.log("  max reward    : " + maxReward);
+            console.log("======================");
+        }
+
+        // write the score
+        //this.m_scoreText.setText('Episode: ' +  window.reinforcement_info.episode + ' - Last/Mean Reward: ' + episodeRewardsSum + ' / ' + meanReward);
+
+        // Add mean reward to visualization
+        this.m_visualizationRewardData.push(
+            { x: 1.0 *  window.reinforcement_info.episode, 
+            y: meanReward 
+            }
+        );
+        let series = { values : [ this.m_visualizationRewardData] , series : ["MeanRewards"]};
+        tfvis.render.linechart(this.m_visualizationSurface, series, {});
+
+        // move to next episode
+        window.reinforcement_info.episode++;
+
+        this.scene.restart({ mode : this.m_mode});
+           
+    }
+
+    onTrainingNStepOver(debug)
+    {
+        // Display histogram with chosen actions
+        //tfvis.render.histogram(this.m_actionSurface, this.m_cartPoleInfo.episodeActions, {});
+
+        this.logMemory("after train n-step");
+
+        // Store/display stats
+        // compute the episode total reward
+        let episodeRewardsSum = VectorUtils.sum(this.m_cartPoleInfo.episodeRewards);
+
+        // Add to the list of epidode rewards
+        window.reinforcement_info.tmpNStepReward += episodeRewardsSum;
+
+        if (debug)
+        {
+            console.log("------ n-step over with rw=" + episodeRewardsSum + 
+                        " (sum =" + window.reinforcement_info.tmpNStepReward+ ") ------");
+        }
+
+        // Move to next n-step
+        this.m_cartPoleInfo.onNewNStep();
+
+        //this.scene.restart({ mode : this.m_mode});
+        this.m_waitRestart = false;
+           
     }
 
     // compute the sum
@@ -755,3 +773,12 @@ function arraysIdentical(a, b) {
     return true;
 };
 
+function onTrainingOverCallback()
+{
+    this.game.onTrainingOver(this.debug);
+}
+
+function onTrainingNStepOverCallback()
+{
+    this.game.onTrainingNStepOver(this.debug);
+}
