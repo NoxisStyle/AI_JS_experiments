@@ -118,7 +118,7 @@ class PlayGame extends Phaser.Scene {
         // reset episode info
         // In Actor Critic n-step we should not reset everything as
         // we may not have a complete n-step
-        let resetingDuringNStep = (window.reinforcement_model !== null && window.reinforcement_model.hasNSteps() && !reinforcementModelJustCreated);
+        let resetingDuringNStep = (this.m_mode == "RL_TRAIN" && window.reinforcement_model !== null && window.reinforcement_model.hasNSteps() && !reinforcementModelJustCreated);
         this.m_cartPoleInfo.reset(resetingDuringNStep);
         
 
