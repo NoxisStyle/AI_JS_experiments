@@ -8,13 +8,12 @@ This experiment uses Tensorflow.js in order to solve the cartpole problem using 
 
 ![Alt text](data/cartpole_trained.gif?raw=true "trainedmodel")
 
-The Settings page allows to:
-
 3 algorithms are available:
-  * REINFORCE
-  * REINFORCE with baseline
-  * Actor Critic (A2C)
+* REINFORCE
+* REINFORCE with baseline
+* Actor Critic (A2C)
 
+The Settings page allows to:
  * Configure the Hypermarameters of the Policy and Value models
  * Store the trained model in the Browser
  * Retrieve and use stored models
